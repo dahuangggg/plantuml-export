@@ -1,0 +1,14 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+
+Person(user, "User")
+System(system, "PlantUML System")
+Container(web, "Web App", "Zed")
+Component(exporter, "Exporter")
+Rel(user, system, "Uses")
+Rel(system, web, "Serves")
+Rel(web, exporter, "Calls")
+@enduml

@@ -1,0 +1,16 @@
+id = "plantuml-export"
+name = "PlantUML Export"
+version = "0.0.1"
+schema_version = 1
+authors = ["Jason Huang <dahuangggg@icloud.com>"]
+description = "PlantUML language support and task-based exports for Zed."
+repository = "https://github.com/dahuangggg/plantuml-export"
+snippets = ["./snippets/plantuml.json"]
+
+[grammars.plantuml]
+repository = "https://github.com/bemyak/tree-sitter-plantuml"
+rev = "45e96e04c2857ae82a268fe970f0e8177320fe42"
+
+[language_servers.plantuml-lsp]
+name = "PlantUML LSP"
+languages = ["PlantUML"]

@@ -1,0 +1,13 @@
+@startuml
+title PlantUML Export Demo
+
+actor User
+participant "Zed Task" as Task
+participant "PlantUML Renderer" as Renderer
+
+User -> Task : run export task
+Task -> Renderer : render sample.puml
+Renderer --> Task : write image file
+Task --> User : output ready
+
+@enduml

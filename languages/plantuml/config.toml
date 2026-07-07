@@ -1,0 +1,6 @@
+name = "PlantUML"
+grammar = "plantuml"
+path_suffixes = ["wsd", "pu", "puml", "plantuml", "iuml"]
+line_comments = ["' "]
+tab_size = 2
+hard_tabs = false

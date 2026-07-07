@@ -1,0 +1,9 @@
+node_modules/
+extension.wasm
+out/
+target/
+grammars/
+tmp/
+vendor/
+docs/
+*.log

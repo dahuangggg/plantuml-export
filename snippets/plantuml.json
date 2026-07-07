@@ -1,0 +1,213 @@
+{
+  "Sequence Diagram": {
+    "prefix": "seq",
+    "body": [
+      "@startuml",
+      "title ${1:Sequence Diagram}",
+      "",
+      "actor ${2:User}",
+      "participant \"${3:System}\" as ${4:System}",
+      "",
+      "${2:User} -> ${4:System} : ${5:request}",
+      "${4:System} --> ${2:User} : ${6:response}",
+      "",
+      "@enduml"
+    ],
+    "description": "Create a PlantUML sequence diagram"
+  },
+  "Use Case Diagram": {
+    "prefix": "usecase",
+    "body": [
+      "@startuml",
+      "left to right direction",
+      "actor ${1:User}",
+      "rectangle \"${2:System}\" {",
+      "  usecase \"${3:Use Case}\" as ${4:UC1}",
+      "}",
+      "${1:User} --> ${4:UC1}",
+      "@enduml"
+    ],
+    "description": "Create a PlantUML use case diagram"
+  },
+  "State Diagram": {
+    "prefix": "state",
+    "body": [
+      "@startuml",
+      "[*] --> ${1:Idle}",
+      "${1:Idle} --> ${2:Running} : ${3:event}",
+      "${2:Running} --> [*]",
+      "@enduml"
+    ],
+    "description": "Create a PlantUML state diagram"
+  },
+  "Activity Diagram": {
+    "prefix": "activity",
+    "body": [
+      "@startuml",
+      "start",
+      ":${1:First action};",
+      "if (${2:condition}?) then (yes)",
+      "  :${3:Do work};",
+      "else (no)",
+      "  :${4:Handle alternative};",
+      "endif",
+      "stop",
+      "@enduml"
+    ],
+    "description": "Create a PlantUML activity diagram"
+  },
+  "Class Diagram": {
+    "prefix": "class",
+    "body": [
+      "@startuml",
+      "class ${1:ClassName} {",
+      "  +${2:method}()",
+      "  -${3:field}: ${4:Type}",
+      "}",
+      "",
+      "${1:ClassName} --> ${5:OtherClass}",
+      "@enduml"
+    ],
+    "description": "Create a PlantUML class diagram"
+  },
+  "Component Diagram": {
+    "prefix": "component",
+    "body": [
+      "@startuml",
+      "package \"${1:System}\" {",
+      "  component \"${2:Component}\" as ${3:C1}",
+      "  component \"${4:Dependency}\" as ${5:C2}",
+      "}",
+      "${3:C1} --> ${5:C2}",
+      "@enduml"
+    ],
+    "description": "Create a PlantUML component diagram"
+  },
+  "Deployment Diagram": {
+    "prefix": "deployment",
+    "body": [
+      "@startuml",
+      "node \"${1:Server}\" as ${2:Server} {",
+      "  artifact \"${3:Application}\" as ${4:App}",
+      "}",
+      "database \"${5:Database}\" as ${6:DB}",
+      "${4:App} --> ${6:DB}",
+      "@enduml"
+    ],
+    "description": "Create a PlantUML deployment diagram"
+  },
+  "C4 Context Diagram": {
+    "prefix": "c4context",
+    "body": [
+      "@startuml",
+      "!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml",
+      "",
+      "Person(${1:user}, \"${2:User}\")",
+      "System(${3:system}, \"${4:System}\", \"${5:Description}\")",
+      "",
+      "Rel(${1:user}, ${3:system}, \"${6:Uses}\")",
+      "@enduml"
+    ],
+    "description": "Create a C4 context diagram"
+  },
+  "Object Diagram": {
+    "prefix": "object",
+    "body": [
+      "@startuml",
+      "object \"${1:Object}\" as ${2:obj} {",
+      "  ${3:field} = ${4:value}",
+      "}",
+      "",
+      "object \"${5:Related}\" as ${6:related}",
+      "${2:obj} --> ${6:related}",
+      "@enduml"
+    ],
+    "description": "Create a PlantUML object diagram"
+  },
+  "Timing Diagram": {
+    "prefix": "timing",
+    "body": [
+      "@startuml",
+      "robust \"${1:Participant}\" as ${2:P}",
+      "concise \"${3:Signal}\" as ${4:S}",
+      "",
+      "@0",
+      "${2:P} is ${5:Idle}",
+      "${4:S} is ${6:Low}",
+      "",
+      "@${7:100}",
+      "${2:P} is ${8:Active}",
+      "${4:S} is ${9:High}",
+      "@enduml"
+    ],
+    "description": "Create a PlantUML timing diagram"
+  },
+  "Gantt Chart": {
+    "prefix": "gantt",
+    "body": [
+      "@startgantt",
+      "Project starts ${1:2026-01-01}",
+      "[${2:Task}] lasts ${3:5} days",
+      "then [${4:Next task}] lasts ${5:3} days",
+      "[${2:Task}] is colored in ${6:LightBlue}",
+      "@endgantt"
+    ],
+    "description": "Create a PlantUML Gantt chart"
+  },
+  "Mindmap": {
+    "prefix": "mindmap",
+    "body": [
+      "@startmindmap",
+      "* ${1:Root}",
+      "** ${2:Branch}",
+      "*** ${3:Leaf}",
+      "@endmindmap"
+    ],
+    "description": "Create a PlantUML mindmap"
+  },
+  "Work Breakdown Structure": {
+    "prefix": "wbs",
+    "body": [
+      "@startwbs",
+      "* ${1:Project}",
+      "** ${2:Work package}",
+      "*** ${3:Task}",
+      "@endwbs"
+    ],
+    "description": "Create a PlantUML work breakdown structure"
+  },
+  "Entity Relationship Diagram": {
+    "prefix": "er",
+    "body": [
+      "@startuml",
+      "entity \"${1:Customer}\" as ${2:customer} {",
+      "  *${3:id} : ${4:number}",
+      "  --",
+      "  *${5:name} : ${6:string}",
+      "}",
+      "",
+      "entity \"${7:Order}\" as ${8:order} {",
+      "  *${9:id} : ${10:number}",
+      "}",
+      "",
+      "${2:customer} ||--o{ ${8:order} : ${11:places}",
+      "@enduml"
+    ],
+    "description": "Create a PlantUML entity relationship diagram"
+  },
+  "Sequence Alt/Loop Block": {
+    "prefix": "altloop",
+    "body": [
+      "alt ${1:condition}",
+      "  ${2:Actor} -> ${3:System} : ${4:message}",
+      "else ${5:alternative}",
+      "  ${2:Actor} -> ${3:System} : ${6:other message}",
+      "end",
+      "",
+      "loop ${7:each item}",
+      "  ${2:Actor} -> ${3:System} : ${8:repeat}",
+      "end"
+    ],
+    "description": "Insert PlantUML sequence alt and loop blocks"
+  }
+}

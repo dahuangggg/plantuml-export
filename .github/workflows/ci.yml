@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+          components: rustfmt
+
+      - run: npm test
+
+      - run: cargo fmt --check
+
+      - run: cargo check --target wasm32-wasip1
+
+      - run: npm run generate:tasks
+
+      - run: git diff --exit-code -- languages/plantuml/tasks.json
+
+      - run: npm run check:release-package
