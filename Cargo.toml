@@ -1,7 +1,18 @@
 [package]
-name = "plantuml-export"
+name = "plantuml-export-zed"
 version = "0.0.1"
 edition = "2021"
+
+[workspace]
+members = ["crates/plantuml-export"]
+default-members = ["."]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/dahuangggg/plantuml-export"
 
 [lib]
 crate-type = ["cdylib"]
