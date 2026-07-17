@@ -5,9 +5,9 @@ import { test } from "node:test";
 
 const root = new URL("../", import.meta.url);
 
-test("PlantUML query files only reference nodes from the bundled grammar", () => {
+test("PlantUML query files only reference nodes from the pinned grammar fixture", () => {
   const nodeTypes = new Set(
-    JSON.parse(read("grammars/plantuml/src/node-types.json")).map(
+    JSON.parse(read("test/fixtures/plantuml-node-types.json")).map(
       (node) => node.type,
     ),
   );
