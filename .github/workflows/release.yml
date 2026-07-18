@@ -1,0 +1,237 @@
+name: Release native toolchain
+
+on:
+  push:
+    tags:
+      - "v0.1.0-rc.1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    name: Verify tagged source
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Scan repository history for secrets
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITLEAKS_ENABLE_COMMENTS: "false"
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
+          GITLEAKS_VERSION: "8.30.1"
+
+      - name: Enforce a complete-history secret scan
+        shell: bash
+        run: gitleaks git --redact --no-banner --log-opts="--all" .
+
+      - name: Use the repository test Node runtime
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: Audit locked Rust dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo install cargo-audit --version 0.22.2 --locked
+          cargo audit --deny warnings --file Cargo.lock
+
+      - name: Validate tag, version, and main ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          if [[ "${tag}" != "v0.1.0-rc.1" ]]; then
+            echo "unsupported release tag: ${tag}" >&2
+            exit 1
+          fi
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "${GITHUB_SHA}" origin/main
+          expected_version="${tag#v}"
+          actual_version="$(
+            cargo metadata --locked --format-version 1 --no-deps |
+              jq -r '.packages[] | select(.name == "plantuml-export-cli") | .version'
+          )"
+          test "${actual_version}" = "${expected_version}"
+          jq -e '
+            .schemaVersion == 1 and
+            .repository == "dahuangggg/plantuml-export" and
+            .status == "unpublished" and
+            .releaseTag == null and
+            .artifacts == []
+          ' release/native-helper-release.json
+
+      - name: Verify only tracked source inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive_dir="$(mktemp -d)"
+          git archive HEAD | tar -x -C "${archive_dir}"
+          cd "${archive_dir}"
+          npm run check:release-package
+          rustup target add wasm32-wasip2
+          cargo fmt --all -- --check
+          cargo test --locked --workspace --all-targets
+          cargo clippy --locked -p plantuml-export-cli --all-targets -- -D warnings
+          RUSTC_WRAPPER="" cargo build --locked --target wasm32-wasip2 --target-dir target
+          npm test
+
+      - name: Preserve the reviewed release notes
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: release-notes
+          path: release/notes-v0.1.0-rc.1.md
+          if-no-files-found: error
+          retention-days: 7
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: gate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            asset: plantuml-export-aarch64-apple-darwin
+            exe: ""
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            asset: plantuml-export-x86_64-apple-darwin
+            exe: ""
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            asset: plantuml-export-aarch64-unknown-linux-gnu
+            exe: ""
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            asset: plantuml-export-x86_64-unknown-linux-gnu
+            exe: ""
+          - runner: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            asset: plantuml-export-aarch64-pc-windows-msvc.exe
+            exe: .exe
+          - runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            asset: plantuml-export-x86_64-pc-windows-msvc.exe
+            exe: .exe
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Build and test native target
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup target add "${{ matrix.target }}"
+          cargo test --locked --release -p plantuml-export-cli --target "${{ matrix.target }}"
+          cargo build --locked --release -p plantuml-export-cli --target "${{ matrix.target }}"
+          mkdir -p dist
+          cp \
+            "target/${{ matrix.target }}/release/plantuml-export${{ matrix.exe }}" \
+            "dist/${{ matrix.asset }}"
+          "dist/${{ matrix.asset }}" version --json
+
+      - name: Smoke managed SVG, PNG, and PDF exports
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/smoke-native-helper.sh \
+            "dist/${{ matrix.asset }}" \
+            test/fixtures/graphviz-class.puml \
+            "${RUNNER_TEMP}/plantuml-export-smoke"
+
+      - name: Upload native binary
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: binary-${{ matrix.target }}
+          path: dist/${{ matrix.asset }}
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Attest and publish prerelease
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - name: Download native binaries
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: binary-*
+          path: dist
+          merge-multiple: true
+
+      - name: Download the reviewed release notes
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: release-notes
+          path: release
+
+      - name: Validate exact asset set and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="$(mktemp)"
+          actual="$(mktemp)"
+          cat >"${expected}" <<'EOF'
+          plantuml-export-aarch64-apple-darwin
+          plantuml-export-aarch64-pc-windows-msvc.exe
+          plantuml-export-aarch64-unknown-linux-gnu
+          plantuml-export-x86_64-apple-darwin
+          plantuml-export-x86_64-pc-windows-msvc.exe
+          plantuml-export-x86_64-unknown-linux-gnu
+          EOF
+          find dist -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort >"${actual}"
+          diff -u "${expected}" "${actual}"
+          (
+            cd dist
+            sha256sum plantuml-export-* | LC_ALL=C sort -k2 > SHA256SUMS
+            sha256sum --check SHA256SUMS
+          )
+
+      - name: Attest native binaries
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6
+        with:
+          subject-checksums: dist/SHA256SUMS
+
+      - name: Attest checksum manifest
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6
+        with:
+          subject-path: dist/SHA256SUMS
+
+      - name: Publish prerelease assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "${GITHUB_REF_NAME}" dist/* \
+            --draft \
+            --verify-tag \
+            --title "PlantUML Export ${GITHUB_REF_NAME}" \
+            --notes-file release/notes-v0.1.0-rc.1.md
+          gh release edit "${GITHUB_REF_NAME}" \
+            --draft=false \
+            --prerelease \
+            --latest=false

@@ -1,0 +1,3 @@
+@startuml ../../plantuml-export-escape-sentinel
+Alice -> Bob : must stay inside export staging
+@enduml

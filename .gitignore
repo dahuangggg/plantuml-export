@@ -7,4 +7,9 @@ tmp/
 vendor/
 .codex-thread/
 *.log
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
 docs/superpowers/

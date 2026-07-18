@@ -36,7 +36,7 @@ pub enum Command {
     Health,
     /// Print the native toolchain version.
     Version,
-    /// Run the diagnostic-only language server over stdio.
+    /// Run the native export and diagnostic language server over stdio.
     #[command(hide = true)]
     Lsp,
 }
@@ -83,10 +83,7 @@ pub struct ExportArgs {
     #[arg(long, value_enum)]
     pub layout: Option<Layout>,
 
-    #[arg(long, value_enum)]
-    pub security: Option<SecurityProfile>,
-
-    /// Add a local PlantUML include allowlist path.
+    /// Add a local PlantUML include search root.
     #[arg(long = "include-path", value_name = "PATH")]
     pub include_paths: Vec<PathBuf>,
 
@@ -98,7 +95,7 @@ pub struct ExportArgs {
     #[arg(long = "exclude", value_name = "GLOB")]
     pub exclude: Vec<String>,
 
-    /// Java executable used by managed and jar renderers.
+    /// Java executable used by the explicit jar renderer.
     #[arg(long = "java", value_name = "PATH")]
     pub java_path: Option<PathBuf>,
 
@@ -109,6 +106,10 @@ pub struct ExportArgs {
     /// PlantUML jar used by jar renderer mode.
     #[arg(long = "jar", value_name = "PATH")]
     pub jar_path: Option<PathBuf>,
+
+    /// Graphviz dot executable used by the graphviz layout.
+    #[arg(long = "graphviz", value_name = "PATH")]
+    pub graphviz_path: Option<PathBuf>,
 
     /// Disable all managed renderer network access.
     #[arg(long)]
@@ -136,6 +137,10 @@ pub struct CheckArgs {
     /// Fail when input discovery produces no source files.
     #[arg(long)]
     pub require_input: bool,
+
+    /// Add a local PlantUML include search root.
+    #[arg(long = "include-path", value_name = "PATH")]
+    pub include_paths: Vec<PathBuf>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ValueEnum)]
@@ -146,7 +151,7 @@ pub enum RendererMode {
     Jar,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ValueEnum)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize, ValueEnum)]
 #[serde(rename_all = "lowercase")]
 pub enum OutputFormat {
     Svg,
@@ -154,15 +159,19 @@ pub enum OutputFormat {
     Pdf,
 }
 
+impl OutputFormat {
+    pub const fn extension(self) -> &'static str {
+        match self {
+            Self::Svg => "svg",
+            Self::Png => "png",
+            Self::Pdf => "pdf",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ValueEnum)]
 #[serde(rename_all = "lowercase")]
 pub enum Layout {
     Graphviz,
     Smetana,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ValueEnum)]
-#[serde(rename_all = "lowercase")]
-pub enum SecurityProfile {
-    Allowlist,
 }

@@ -21,6 +21,20 @@ fn maps_standard_plantuml_reports_to_exact_lsp_lines() {
 }
 
 #[test]
+fn prefers_the_structured_v1_label_over_the_generic_summary() {
+    let diagnostics = parse_standard_report(
+        "protocolVersion=1\nstatus=ERROR\nlineNumber=2\nlabel=Syntax Error? (Assumed diagram type: sequence)\nError line 2 in file: docs/bad.puml\nSome diagram description contains errors\n",
+    );
+
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].range.start, Position::new(1, 0));
+    assert_eq!(
+        diagnostics[0].message,
+        "Syntax Error? (Assumed diagram type: sequence)"
+    );
+}
+
+#[test]
 fn ignores_successful_plantuml_reports() {
     assert!(parse_standard_report("File generation OK\n").is_empty());
 }

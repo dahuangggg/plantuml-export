@@ -1,13 +1,11 @@
 {
-  "name": "zed-plantuml-export",
-  "version": "0.0.1",
+  "name": "plantuml-export",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
     "check:release-package": "node scripts/check-release-package.mjs",
-    "generate:tasks": "node scripts/generate-plantuml-tasks.mjs",
-    "test": "node --test",
-    "export:example": "node scripts/plantuml-export.mjs --format png --out-dir out/plantuml examples/sample.puml",
-    "export:workspace": "node scripts/plantuml-export.mjs --workspace --format svg --out-dir out/plantuml ."
+    "generate:helper-metadata": "node scripts/generate-native-helper-metadata.mjs",
+    "test": "node --test"
   }
 }

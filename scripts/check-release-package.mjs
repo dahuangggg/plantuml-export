@@ -38,8 +38,21 @@ if (trackedFiles) {
     }
   }
 } else {
-  for (const filePath of listFiles(root)) {
-    const relativePath = path.relative(pathFromUrl(root), filePath);
+  for (const { relativePath, kind } of listPackageEntries(pathFromUrl(root))) {
+    const forbiddenPath = forbiddenPathFor(relativePath);
+    if (forbiddenPath) {
+      errors.push(`Generated or local-only artifact is tracked: ${forbiddenPath}`);
+      continue;
+    }
+
+    if (kind === "symlink") {
+      errors.push(`Symbolic links must not be bundled in the extension source: ${relativePath}`);
+      continue;
+    }
+    if (kind === "special") {
+      errors.push(`Special files must not be bundled in the extension source: ${relativePath}`);
+      continue;
+    }
     if (relativePath.endsWith(".jar")) {
       errors.push(`Renderer jar must not be bundled in the extension source: ${relativePath}`);
     }
@@ -56,29 +69,55 @@ if (errors.length > 0) {
 
 console.log("Release package check passed");
 
-function listFiles(directoryUrl) {
-  const files = [];
+function listPackageEntries(directoryPath) {
+  const entries = [];
 
-  visit(directoryUrl);
-  return files;
+  visit(directoryPath);
+  return entries;
 
-  function visit(currentUrl) {
-    for (const entry of fs.readdirSync(currentUrl, { withFileTypes: true })) {
-      if (
-        entry.name === ".git" ||
-        forbiddenTrackedPaths.includes(entry.name)
-      ) {
+  function visit(currentPath) {
+    for (const entry of fs.readdirSync(currentPath, { withFileTypes: true })) {
+      const entryPath = path.join(currentPath, entry.name);
+      const relativePath = normalizeRelativePath(
+        path.relative(directoryPath, entryPath),
+      );
+
+      if (relativePath === ".git" || relativePath.startsWith(".git/")) {
         continue;
       }
 
-      const entryUrl = new URL(`${entry.name}${entry.isDirectory() ? "/" : ""}`, currentUrl);
+      if (forbiddenPathFor(relativePath)) {
+        entries.push({ relativePath, kind: entryKind(entry) });
+        continue;
+      }
+
       if (entry.isDirectory()) {
-        visit(entryUrl);
-      } else if (entry.isFile()) {
-        files.push(entryUrl.pathname);
+        visit(entryPath);
+      } else {
+        entries.push({ relativePath, kind: entryKind(entry) });
       }
     }
   }
+}
+
+function entryKind(entry) {
+  if (entry.isFile()) return "file";
+  if (entry.isDirectory()) return "directory";
+  if (entry.isSymbolicLink()) return "symlink";
+  return "special";
+}
+
+function forbiddenPathFor(relativePath) {
+  const normalizedPath = normalizeRelativePath(relativePath);
+  return forbiddenTrackedPaths.find(
+    (forbiddenPath) =>
+      normalizedPath === forbiddenPath ||
+      normalizedPath.startsWith(`${forbiddenPath}/`),
+  );
+}
+
+function normalizeRelativePath(relativePath) {
+  return relativePath.split(path.sep).join("/");
 }
 
 function readTrackedFiles() {

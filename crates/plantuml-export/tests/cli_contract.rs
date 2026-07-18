@@ -26,6 +26,8 @@ fn parses_stable_export_flags_into_typed_overrides() {
         "build/diagrams",
         "--renderer",
         "jar",
+        "--graphviz",
+        "/tools/dot",
         "model.puml",
     ])
     .unwrap();
@@ -39,6 +41,7 @@ fn parses_stable_export_flags_into_typed_overrides() {
     assert_eq!(export.format, Some(OutputFormat::Pdf));
     assert_eq!(export.out_dir, Some(PathBuf::from("build/diagrams")));
     assert_eq!(export.renderer, Some(RendererMode::Jar));
+    assert_eq!(export.graphviz_path, Some(PathBuf::from("/tools/dot")));
     assert_eq!(export.inputs, vec![PathBuf::from("model.puml")]);
 }
 
@@ -51,4 +54,34 @@ fn lsp_is_hidden_from_public_help() {
     assert!(help.contains("health"));
     assert!(help.contains("version"));
     assert!(!help.contains("\n  lsp"));
+    assert!(!help.contains("--security"));
+}
+
+#[test]
+fn check_accepts_the_same_local_include_roots_as_export() {
+    let cli = Cli::try_parse_from([
+        "plantuml-export",
+        "check",
+        "--include-path",
+        "shared/plantuml",
+        "model.puml",
+    ])
+    .unwrap();
+
+    let Command::Check(check) = cli.command else {
+        panic!("expected check command")
+    };
+    assert_eq!(check.include_paths, vec![PathBuf::from("shared/plantuml")]);
+}
+
+#[test]
+fn unreleased_security_flag_is_rejected_without_migration() {
+    assert!(Cli::try_parse_from([
+        "plantuml-export",
+        "export",
+        "--security",
+        "allowlist",
+        "model.puml",
+    ])
+    .is_err());
 }

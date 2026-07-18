@@ -4,37 +4,107 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test:
-    runs-on: ${{ matrix.os }}
+  quality:
+    name: Source, contracts, and Wasm
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out tracked source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Scan repository history for secrets
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITLEAKS_ENABLE_COMMENTS: "false"
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
+          GITLEAKS_VERSION: "8.30.1"
+
+      - name: Enforce a complete-history secret scan
+        shell: bash
+        run: gitleaks git --redact --no-banner --log-opts="--all" .
+
+      - name: Use the repository test Node runtime
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: Audit locked Rust dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo install cargo-audit --version 0.22.2 --locked
+          cargo audit --deny warnings --file Cargo.lock
+
+      - name: Verify native and extension contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --version
+          rustc --version
+          cargo fmt --all -- --check
+          cargo test --locked --workspace --all-targets
+          cargo clippy --locked --workspace --all-targets -- -D warnings
+          RUSTC_WRAPPER="" cargo build --locked --target wasm32-wasip2 --target-dir target
+          npm test
+          npm run check:release-package
+          git diff --exit-code
+
+  native:
+    name: Native ${{ matrix.target }}
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - ubuntu-latest
-          - macos-latest
-          - windows-latest
-
+        include:
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            exe: ""
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            exe: ""
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            exe: ""
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            exe: ""
+          - runner: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            exe: .exe
+          - runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            exe: .exe
+    runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
+      - name: Check out tracked source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          node-version: "22"
+          persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Use the repository test Node runtime
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
-          targets: wasm32-wasip1
-          components: rustfmt
+          node-version: "24"
+          package-manager-cache: false
 
-      - run: npm test
-
-      - run: cargo fmt --check
-
-      - run: cargo check --target wasm32-wasip1
-
-      - run: npm run generate:tasks
-
-      - run: git diff --exit-code -- languages/plantuml/tasks.json
-
-      - run: npm run check:release-package
+      - name: Test the host-native CLI and repository assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup target add "${{ matrix.target }}"
+          cargo test --locked --release -p plantuml-export-cli --target "${{ matrix.target }}"
+          cargo build --locked --release -p plantuml-export-cli --target "${{ matrix.target }}"
+          "target/${{ matrix.target }}/release/plantuml-export${{ matrix.exe }}" version --json
+          npm test
+          npm run check:release-package

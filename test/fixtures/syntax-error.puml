@@ -1,0 +1,4 @@
+@startuml
+class Broken {
+  +missing_type(
+@enduml

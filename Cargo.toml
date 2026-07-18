@@ -1,7 +1,10 @@
 [package]
 name = "plantuml-export-zed"
-version = "0.0.1"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
 
 [workspace]
 members = ["crates/plantuml-export"]
@@ -16,6 +19,9 @@ repository = "https://github.com/dahuangggg/plantuml-export"
 
 [lib]
 crate-type = ["cdylib"]
+path = "extension/src/lib.rs"
 
 [dependencies]
+serde = { version = "1", features = ["derive"] }
+sha2 = "0.10"
 zed_extension_api = "0.7.0"

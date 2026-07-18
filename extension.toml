@@ -1,9 +1,9 @@
 id = "plantuml-export"
 name = "PlantUML Export"
-version = "0.0.1"
+version = "0.1.0"
 schema_version = 1
 authors = ["Jason Huang <dahuangggg@icloud.com>"]
-description = "PlantUML language support and task-based exports for Zed."
+description = "PlantUML language support backed by the native PlantUML Export toolchain."
 repository = "https://github.com/dahuangggg/plantuml-export"
 snippets = ["./snippets/plantuml.json"]
 

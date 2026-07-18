@@ -48,6 +48,14 @@ test("C4 fixture constructs have matching highlight coverage", () => {
   }
 });
 
+test("C4 fixture uses the bundled component layer accepted by local-only rendering", () => {
+  const fixture = read("test/fixtures/c4-context.puml");
+  const includes = fixture.match(/^!include\s+.+$/gm) ?? [];
+
+  assert.deepEqual(includes, ["!include <C4/C4_Component>"]);
+  assert.doesNotMatch(fixture, /^!include\s+https?:\/\//m);
+});
+
 function extractQueryNodeNames(query) {
   const names = new Set();
   const stripped = query

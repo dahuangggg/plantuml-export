@@ -2,12 +2,15 @@
 title PlantUML Export Demo
 
 actor User
-participant "Zed Task" as Task
+participant "Zed Code Action" as Action
+participant "Native helper / LSP" as Helper
 participant "PlantUML Renderer" as Renderer
 
-User -> Task : run export task
-Task -> Renderer : render sample.puml
-Renderer --> Task : write image file
-Task --> User : output ready
+User -> Action : choose SVG / PNG / PDF
+Action -> Helper : workspace/executeCommand
+note right of Helper : same helper process
+Helper -> Renderer : render sample.puml
+Renderer --> Helper : write image file
+Helper --> User : output ready
 
 @enduml

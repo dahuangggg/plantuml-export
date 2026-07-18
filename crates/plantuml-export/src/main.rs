@@ -6,8 +6,10 @@ use plantuml_export::cli::{Cli, Command};
 use plantuml_export::config::{resolve, ConfigRequest};
 use plantuml_export::lsp;
 use plantuml_export::protocol::JsonEnvelope;
+use plantuml_export::runtime::{self, CheckReport, HealthData};
 use plantuml_export::AppError;
 use serde::Serialize;
+use serde_json::Value;
 
 fn main() -> ExitCode {
     let code = run(std::env::args_os().collect());
@@ -17,10 +19,6 @@ fn main() -> ExitCode {
 fn run(args: Vec<OsString>) -> i32 {
     let json_requested = args.iter().any(|arg| arg == "--json");
     let command_hint = command_hint(&args);
-    if let Some(error) = legacy_cli_error(&args) {
-        report_error(json_requested, command_hint, &error);
-        return error.exit_code();
-    }
     let cli = match Cli::try_parse_from(args) {
         Ok(cli) => cli,
         Err(error) => {
@@ -60,8 +58,18 @@ fn run(args: Vec<OsString>) -> i32 {
         }
     };
 
-    match dispatch(&cli.command, config) {
-        Ok(()) => 0,
+    if matches!(cli.command, Command::Lsp) {
+        return match lsp::run_stdio(config) {
+            Ok(()) => 0,
+            Err(error) => {
+                report_error(false, command_name, &error);
+                error.exit_code()
+            }
+        };
+    }
+
+    match dispatch(&cli.command, &config) {
+        Ok(result) => report_result(cli.json, command_name, result),
         Err(error) => {
             report_error(cli.json, command_name, &error);
             error.exit_code()
@@ -71,23 +79,162 @@ fn run(args: Vec<OsString>) -> i32 {
 
 fn dispatch(
     command: &Command,
-    config: plantuml_export::config::ResolvedConfig,
-) -> Result<(), AppError> {
+    config: &plantuml_export::config::ResolvedConfig,
+) -> Result<CommandResult, AppError> {
     match command {
-        Command::Export(_) | Command::Check(_) => Err(AppError::operation(
-            "not_implemented",
-            format!(
-                "{} is not implemented in this native toolchain foundation",
-                command.name()
-            ),
-        )),
-        Command::Health => Err(AppError::environment(
-            "health_unavailable",
-            "renderer health checks are not implemented in this native toolchain foundation",
-        )),
-        Command::Lsp => lsp::run_stdio(config),
+        Command::Export(args) => {
+            let report = runtime::run_export(config, args)?;
+            let human = format_export_report(&report);
+            let error = (!report.failures.is_empty()).then(|| {
+                let code = if report.is_partial() {
+                    "partial_export"
+                } else {
+                    "export_failed"
+                };
+                AppError::operation(
+                    code,
+                    format!(
+                        "{} PlantUML input(s) failed to export",
+                        report.failures.len()
+                    ),
+                )
+            });
+            CommandResult::new(report, human, error)
+        }
+        Command::Check(args) => {
+            let report = runtime::run_check(config, args)?;
+            let human = format_check_report(&report);
+            let error = (!report.failures.is_empty()).then(|| {
+                AppError::operation(
+                    "syntax_errors",
+                    format!(
+                        "{} PlantUML input(s) contain syntax errors",
+                        report.failures.len()
+                    ),
+                )
+            });
+            CommandResult::new(report, human, error)
+        }
+        Command::Health => {
+            let health = runtime::run_health(config)?;
+            let human = format_health(&health);
+            let error = (!health.ready).then(|| {
+                AppError::environment(
+                    "renderer_unhealthy",
+                    "one or more renderer prerequisites are unavailable or incompatible",
+                )
+            });
+            CommandResult::new(health, human, error)
+        }
+        Command::Lsp => unreachable!("lsp is handled before result reporting"),
         Command::Version => unreachable!("version is handled before configuration"),
     }
+}
+
+struct CommandResult {
+    data: Value,
+    human: String,
+    error: Option<AppError>,
+}
+
+impl CommandResult {
+    fn new(data: impl Serialize, human: String, error: Option<AppError>) -> Result<Self, AppError> {
+        let data = serde_json::to_value(data).map_err(|error| {
+            AppError::environment(
+                "result_serialization",
+                format!("failed to serialize command result: {error}"),
+            )
+        })?;
+        Ok(Self { data, human, error })
+    }
+}
+
+fn report_result(json: bool, command: &str, result: CommandResult) -> i32 {
+    match result.error {
+        Some(error) => {
+            if json {
+                print_json(&JsonEnvelope::failure_with_data(
+                    command,
+                    &error,
+                    result.data,
+                ));
+            } else {
+                if !result.human.is_empty() {
+                    println!("{}", result.human);
+                }
+                eprintln!("error: {error}");
+            }
+            error.exit_code()
+        }
+        None => {
+            if json {
+                print_json(&JsonEnvelope::success(command, result.data));
+            } else if !result.human.is_empty() {
+                println!("{}", result.human);
+            }
+            0
+        }
+    }
+}
+
+fn format_export_report(report: &plantuml_export::export::ExportReport) -> String {
+    if report.succeeded.is_empty() && report.failures.is_empty() {
+        return "No PlantUML inputs found.".to_string();
+    }
+    let mut lines = Vec::new();
+    for success in &report.succeeded {
+        lines.push(format!(
+            "exported {} -> {}",
+            success.input,
+            success.outputs.join(", ")
+        ));
+    }
+    for failure in &report.failures {
+        lines.push(format!(
+            "failed {} [{}]: {}",
+            failure.input, failure.code, failure.message
+        ));
+    }
+    lines.join("\n")
+}
+
+fn format_check_report(report: &CheckReport) -> String {
+    if report.checked.is_empty() && report.failures.is_empty() {
+        return "No PlantUML inputs found.".to_string();
+    }
+    let mut lines = report
+        .checked
+        .iter()
+        .map(|input| format!("checked {input}"))
+        .collect::<Vec<_>>();
+    for failure in &report.failures {
+        if failure.diagnostics.is_empty() {
+            lines.push(format!(
+                "failed {} [{}]: {}",
+                failure.input, failure.code, failure.message
+            ));
+        } else {
+            for diagnostic in &failure.diagnostics {
+                lines.push(format!(
+                    "{}:{}: {}",
+                    failure.input, diagnostic.line, diagnostic.message
+                ));
+            }
+        }
+    }
+    lines.join("\n")
+}
+
+fn format_health(health: &HealthData) -> String {
+    format!(
+        "renderer: {} ({})\nJava: {} ({})\nGraphviz: {} ({})",
+        health.renderer.status,
+        health.renderer.detail,
+        health.java.status,
+        health.java.detail,
+        health.graphviz.status,
+        health.graphviz.detail
+    )
 }
 
 fn command_hint(args: &[OsString]) -> &'static str {
@@ -110,29 +257,6 @@ fn command_hint(args: &[OsString]) -> &'static str {
         }
     }
     "unknown"
-}
-
-fn legacy_cli_error(args: &[OsString]) -> Option<AppError> {
-    let arguments: Vec<&str> = args.iter().skip(1).filter_map(|arg| arg.to_str()).collect();
-    for (index, argument) in arguments.iter().enumerate() {
-        let legacy = match *argument {
-            "--plantuml-version" | "--no-auto-download" | "--server-url" | "-t" | "-o" => {
-                Some(*argument)
-            }
-            "--renderer" if arguments.get(index + 1) == Some(&"auto") => Some("--renderer auto"),
-            "--renderer=auto" => Some("--renderer=auto"),
-            _ => None,
-        };
-        if let Some(legacy) = legacy {
-            return Some(AppError::usage(
-                "legacy_cli",
-                format!(
-                    "legacy unreleased CLI configuration `{legacy}` is not supported; use the v0.1 explicit renderer and long-form export flags"
-                ),
-            ));
-        }
-    }
-    None
 }
 
 fn report_error(json: bool, command: &str, error: &AppError) {

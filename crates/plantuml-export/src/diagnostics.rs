@@ -51,6 +51,11 @@ pub fn structural_diagnostics(text: &str) -> Vec<Diagnostic> {
 
 pub fn parse_standard_report(output: &str) -> Vec<Diagnostic> {
     let lines: Vec<&str> = output.lines().collect();
+    let structured = parse_protocol_v1(&lines);
+    if !structured.is_empty() {
+        return structured;
+    }
+
     let mut diagnostics = Vec::new();
 
     for (index, line) in lines.iter().enumerate() {
@@ -70,6 +75,49 @@ pub fn parse_standard_report(output: &str) -> Vec<Diagnostic> {
             DiagnosticSeverity::ERROR,
             message,
         ));
+    }
+
+    diagnostics
+}
+
+fn parse_protocol_v1(lines: &[&str]) -> Vec<Diagnostic> {
+    // Source format: https://github.com/plantuml/plantuml/blob/v1.2026.6/src/main/java/net/sourceforge/plantuml/StdrptV1.java#L65-L75
+    let mut diagnostics = Vec::new();
+    let mut cursor = 0;
+
+    while cursor < lines.len() {
+        if lines[cursor].trim() != "protocolVersion=1" {
+            cursor += 1;
+            continue;
+        }
+        let end = lines[cursor + 1..]
+            .iter()
+            .position(|line| line.trim() == "protocolVersion=1")
+            .map_or(lines.len(), |offset| cursor + 1 + offset);
+        let block = &lines[cursor + 1..end];
+        let status_is_error = block
+            .iter()
+            .any(|line| line.trim().eq_ignore_ascii_case("status=ERROR"));
+        let line_number = block.iter().find_map(|line| {
+            line.trim()
+                .strip_prefix("lineNumber=")
+                .and_then(|number| number.trim().parse::<usize>().ok())
+        });
+
+        if let (true, Some(line_number)) = (status_is_error, line_number) {
+            let message = block
+                .iter()
+                .filter_map(|line| line.trim().strip_prefix("label="))
+                .find(|label| !label.is_empty())
+                .unwrap_or("PlantUML syntax error");
+            let line = line_number.saturating_sub(1) as u32;
+            diagnostics.push(diagnostic(
+                Range::new(Position::new(line, 0), Position::new(line, 1)),
+                DiagnosticSeverity::ERROR,
+                message,
+            ));
+        }
+        cursor = end;
     }
 
     diagnostics

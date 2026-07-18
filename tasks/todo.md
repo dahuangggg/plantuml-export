@@ -58,6 +58,7 @@ JSON envelopes, and process exit codes with tests first.
 **Acceptance criteria:**
 
 - [ ] `export`, `check`, `health`, `version`, and `lsp` parse as specified.
+- [ ] `export` and `check` both accept repeatable additive `--include-path`.
 - [ ] `--json` stdout is machine-readable and stable.
 - [ ] Success, operation failure, and usage/environment failure map to 0/1/2.
 
@@ -68,25 +69,40 @@ JSON envelopes, and process exit codes with tests first.
 
 **Dependencies:** Task 2
 
-**Files likely touched:** `Cargo.toml`, `crates/plantuml-export-cli/`
+**Files likely touched:** `Cargo.toml`, `crates/plantuml-export/`
 
 **Estimated scope:** Medium
 
 ## Task 4: Configuration contract
 
-**Description:** Implement root/config discovery, precedence, portable project
-settings, user-only executable settings, and explicit migration errors.
+**Description:** Implement root/config discovery, precedence, additive include
+paths, portable project settings, monotonic remote-policy restriction,
+user-only trusted origins/tools, and strict validation without legacy migration.
 
 **Acceptance criteria:**
 
-- [ ] Precedence is CLI > project > user > defaults.
-- [ ] Nested configs do not cascade and untrusted project paths cannot select
-  executables/download URLs.
-- [ ] Defaults are managed/SVG/out/plantuml/ALLOWLIST/no metadata.
+- [ ] General precedence is CLI/Zed invocation > project > user > defaults;
+  `includePaths` is additive across scopes instead of replacing earlier roots.
+- [ ] Project and Zed include paths are portable and worktree-relative; nested
+  configs do not cascade, while absolute include roots remain user/CLI-only.
+- [ ] `remoteIncludes` accepts only `public`, `allowlist`, or `disabled`; the
+  default is `public`, and project/Zed scopes can only tighten a resolved mode.
+- [ ] `allowedRemoteUrls`, executable paths, JAR/Java/Graphviz paths, and
+  download URLs are machine-owner user settings and cannot be granted by a
+  repository or Zed worktree initialization options. Each allowed HTTP(S)
+  origin contains no non-root path, credentials, query, fragment, or `;`, is
+  normalized with a trailing `/`, and globally authorizes every path at that
+  origin for every worktree.
+- [ ] `offline = true` is sticky, prevents managed downloads, and forces remote
+  includes disabled.
+- [ ] The unreleased schema rejects removed `security` and boolean
+  `remoteIncludes` values; no compatibility migration is implemented.
+- [ ] Defaults are managed/SVG/out/public remote includes/no metadata.
 
 **Verification:**
 
-- [ ] Unit tests cover every source and precedence collision.
+- [ ] Unit tests cover every source, additive path merge, restrictive policy
+  collision, invalid legacy field/value, and user-only setting boundary.
 - [ ] Temporary-worktree integration tests cover root and explicit config.
 
 **Dependencies:** Task 3
@@ -105,6 +121,8 @@ checks behind a debounced, cancellable, latest-wins diagnostic-only LSP.
 - [ ] In-memory diagnostics publish after about 250 ms.
 - [ ] Save checks use the real URI path, 10-second timeout, standard report,
   cancellation, and stale-result suppression.
+- [ ] `check --include-path` and Zed `includePaths` use the same additive include
+  context as export.
 - [ ] Environment failures are shown through health/status, not source ranges.
 
 **Verification:**
@@ -121,15 +139,26 @@ checks behind a debounced, cancellable, latest-wins diagnostic-only LSP.
 ## Task 6: Renderer policy
 
 **Description:** Implement explicit managed/binary/jar resolution, versioned
-managed download integrity, Java/layout requirements, and health output.
+managed JRE/JAR integrity, layout requirements, and health output.
 
 **Acceptance criteria:**
 
 - [ ] No renderer fallback occurs across modes.
-- [ ] Managed 1.2026.6 download is locked, SHA-256 checked, and atomically
-  installed only after explicit use.
-- [ ] Java 17/21, Graphviz/Smetana, ALLOWLIST, remote-include, offline, and
-  metadata policies are enforced.
+- [ ] Managed PlantUML 1.2026.6 and Temurin 21.0.11+10 downloads are locked,
+  SHA-256 checked, safely extracted, and atomically installed only after
+  explicit use.
+- [ ] Managed mode needs no external Java/Graphviz; explicit JAR Java 17/21,
+  Graphviz opt-in, and Smetana remains the default.
+- [ ] Public mode maps to `INTERNET` for zero-configuration public includes;
+  allowlist uses only machine-owner origins; disabled/offline maps to
+  `ALLOWLIST` without an authorized origin. PlantUML's upstream INTERNET checks
+  reduce SSRF exposure but are not a hard network sandbox or an absolute
+  defense against DNS rebinding.
+- [ ] Inherited PlantUML security/include/URL values and aggregate JVM policy
+  variables (`JAVA_TOOL_OPTIONS`, `JDK_JAVA_OPTIONS`, `_JAVA_OPTIONS`) are
+  cleared before every renderer invocation.
+- [ ] Local include roots remain restricted in every remote policy, and source
+  metadata remains disabled by default.
 
 **Verification:**
 
@@ -168,15 +197,19 @@ safe mirrored outputs without entering excluded roots or symlinked directories.
 
 ## Task 8: Transactional Export Session
 
-**Description:** Render each session in isolated staging, validate outputs,
-commit atomically, and maintain exact source ownership in the manifest.
+**Description:** Render each session in isolated platform application state,
+validate outputs, commit atomically, and maintain exact source ownership in the
+internal manifest while exposing only final artifacts under `out/`.
 
 **Acceptance criteria:**
 
 - [ ] Multi-block/newpage outputs are inventoried and type/nonzero validated.
-- [ ] Default workspace failure leaves prior outputs/manifest intact.
+- [ ] Default workspace failure leaves prior outputs/internal manifest intact.
 - [ ] `--keep-going` commits successful sources, returns nonzero, and reports
   every failure; cleanup never removes unrelated files.
+- [ ] Manifest, writer lock, render staging, rollback journal, and backups live
+  under the platform `exports/<workspace-hash>` state directory and never
+  appear in the configured output tree.
 
 **Verification:**
 
@@ -200,41 +233,52 @@ through the Wasm extension for all six platform contracts.
 - [ ] Target mapping and exact artifact checksums are exhaustive.
 - [ ] Install uses temp + verify + atomic replacement and avoids activation-time
   renderer network access.
-- [ ] Language server command is the helper plus `lsp`, with worktree settings.
+- [ ] Language server command is the helper plus `--root <worktree> lsp`; that
+  command-line root remains authoritative over initialization JSON.
+- [ ] The adapter forwards
+  `lsp.plantuml-lsp.initialization_options` directly without a custom root or
+  settings envelope; malformed options fail closed.
+- [ ] The helper accepts only portable additive `includePaths` and a restrictive
+  `remoteIncludes` mode from Zed; it rejects `offline`, tools, and
+  `allowedRemoteUrls`, and applies the options before renderer preparation.
 
 **Verification:**
 
-- [ ] Wasm build and adapter contract tests pass.
+- [ ] Wasm build, adapter forwarding, initialization parsing, trust-boundary,
+  and restrictive-merge contract tests pass.
 - [ ] Dev-extension smoke launches the native LSP on the host platform.
 
 **Dependencies:** Tasks 5-6
 
-**Files likely touched:** `src/lib.rs`, release metadata, extension tests
+**Files likely touched:** `extension/src/lib.rs`, release metadata, extension tests
 
 **Estimated scope:** Medium
 
-## Task 10: Zed tasks and Node removal
+## Task 10: Zed Code Actions and Node removal
 
-**Description:** Route current/workspace tasks and runnables through the public
-CLI, then delete the old embedded JS server, Node CLI, and giant generated shell
-path after parity.
+**Description:** Route saved current-file SVG/PNG/PDF export through LSP Code
+Actions handled by the already-running native helper, then delete the PATH
+tasks/runnables, embedded JS server, Node CLI, and generated shell path after
+parity.
 
 **Acceptance criteria:**
 
-- [ ] Tasks preserve practical labels while defaulting export to SVG.
-- [ ] Runtime source and production tasks contain no Node dependency or embedded
-  renderer shell implementation.
-- [ ] Saved-file behavior and health task are documented.
+- [ ] Code Actions expose SVG, PNG, and PDF through one advertised command.
+- [ ] `workspace/executeCommand` calls the native runtime in the same helper
+  process and never searches PATH for another CLI.
+- [ ] Runtime source contains no Node dependency or embedded renderer shell
+  implementation; static PATH tasks and runnables are absent.
+- [ ] Saved-file behavior and optional standalone CLI usage are documented.
 
 **Verification:**
 
-- [ ] Task contract, release-package, Rust, and Wasm checks pass.
-- [ ] Dev-extension current-file/workspace export smoke passes.
+- [ ] No-PATH LSP integration, release-package, Rust, and Wasm checks pass.
+- [ ] Dev-extension current-file export Code Action smoke passes.
 
 **Dependencies:** Task 9
 
-**Files likely touched:** `languages/plantuml/tasks.json`, runnables, Node files,
-package/release checks
+**Files likely touched:** native LSP/runtime, removed tasks/runnables and Node
+files, package/release checks
 
 **Estimated scope:** Medium
 
@@ -271,7 +315,7 @@ automatable gate, record manual limits, and map the specification to evidence.
 **Acceptance criteria:**
 
 - [ ] README covers install, CLI, config, renderer/security/network behavior,
-  migration, troubleshooting, and no-live-preview boundary.
+  troubleshooting, and the no-live-preview boundary.
 - [ ] Release checklist includes clean checkout, six targets, attestation,
   rollback, and dev-extension QA.
 - [ ] The final audit identifies passed, failed, blocked, and manual-only items

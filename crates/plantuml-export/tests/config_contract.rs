@@ -1,12 +1,13 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use plantuml_export::cli::{Layout, OutputFormat, RendererMode, SecurityProfile};
-use plantuml_export::config::{resolve, ConfigOverrides, ConfigRequest};
+use clap::Parser;
+use plantuml_export::cli::{Cli, Layout, OutputFormat, RendererMode};
+use plantuml_export::config::{resolve, ConfigOverrides, ConfigRequest, RemoteIncludes};
 use tempfile::TempDir;
 
 #[test]
-fn defaults_are_managed_svg_graphviz_allowlist_without_metadata() {
+fn defaults_are_managed_svg_smetana_with_public_remote_includes() {
     let fixture = RepoFixture::new();
 
     let resolved = resolve(fixture.request(ConfigOverrides::default())).unwrap();
@@ -14,9 +15,10 @@ fn defaults_are_managed_svg_graphviz_allowlist_without_metadata() {
     assert_eq!(resolved.root, fixture.root());
     assert_eq!(resolved.renderer, RendererMode::Managed);
     assert_eq!(resolved.format, OutputFormat::Svg);
-    assert_eq!(resolved.out_dir, PathBuf::from("out/plantuml"));
-    assert_eq!(resolved.layout, Layout::Graphviz);
-    assert_eq!(resolved.security, SecurityProfile::Allowlist);
+    assert_eq!(resolved.out_dir, PathBuf::from("out"));
+    assert_eq!(resolved.layout, Layout::Smetana);
+    assert_eq!(resolved.remote_includes, RemoteIncludes::Public);
+    assert!(resolved.allowed_remote_urls.is_empty());
     assert!(!resolved.embed_source_metadata);
 }
 
@@ -55,7 +57,7 @@ layout = "graphviz"
 }
 
 #[test]
-fn include_file_globs_are_distinct_from_local_include_paths() {
+fn local_include_paths_merge_across_user_project_and_cli_scopes() {
     let fixture = RepoFixture::new();
     fixture.write_user(
         r#"
@@ -70,12 +72,23 @@ includePaths = ["shared/includes"]
 "#,
     );
 
-    let resolved = resolve(fixture.request(ConfigOverrides::default())).unwrap();
+    let cli = Cli::try_parse_from([
+        "plantuml-export",
+        "export",
+        "--include-path",
+        "/cli/includes",
+    ])
+    .unwrap();
+    let resolved = resolve(fixture.request(ConfigOverrides::from_cli(&cli))).unwrap();
 
     assert_eq!(resolved.include, vec!["docs/**/*.puml"]);
     assert_eq!(
         resolved.include_paths,
-        vec![PathBuf::from("shared/includes")]
+        vec![
+            PathBuf::from("/user/includes"),
+            PathBuf::from("shared/includes"),
+            PathBuf::from("/cli/includes"),
+        ]
     );
 }
 
@@ -123,12 +136,14 @@ fn explicit_root_and_config_are_resolved_relative_to_the_current_directory() {
 }
 
 #[test]
-fn project_config_rejects_executable_jar_and_download_url_keys() {
+fn project_config_rejects_machine_and_network_trust_roots() {
     for forbidden in [
         "java_path = \"/usr/bin/java\"",
         "binary_path = \"/usr/bin/plantuml\"",
         "jar_path = \"vendor/plantuml.jar\"",
+        "graphviz_path = \"/usr/bin/dot\"",
         "download_url = \"https://example.test/plantuml.jar\"",
+        "allowedRemoteUrls = [\"http://plantuml.internal:8080/\"]",
     ] {
         let fixture = RepoFixture::new();
         fixture.write_project(forbidden);
@@ -141,22 +156,138 @@ fn project_config_rejects_executable_jar_and_download_url_keys() {
 }
 
 #[test]
-fn legacy_unreleased_keys_return_explicit_migration_errors() {
-    for legacy in [
+fn project_config_can_tighten_but_never_widen_machine_network_policy() {
+    let fixture = RepoFixture::new();
+    fixture.write_user("remoteIncludes = \"disabled\"\noffline = true\n");
+    fixture.write_project("remoteIncludes = \"public\"\noffline = false\n");
+
+    let resolved = resolve(fixture.request(ConfigOverrides::default())).unwrap();
+
+    assert_eq!(resolved.remote_includes, RemoteIncludes::Disabled);
+    assert!(resolved.offline);
+
+    let fixture = RepoFixture::new();
+    fixture.write_project("remoteIncludes = \"allowlist\"\noffline = true\n");
+    let resolved = resolve(fixture.request(ConfigOverrides::default())).unwrap();
+    assert_eq!(resolved.remote_includes, RemoteIncludes::Allowlist);
+    assert!(resolved.offline);
+}
+
+#[test]
+fn project_paths_are_portable_relative_and_never_traverse() {
+    for contents in [
+        "outDir = \"/tmp/generated\"\n",
+        "outDir = \"../generated\"\n",
+        "outDir = \"C:\\\\generated\"\n",
+        "includePaths = [\"../shared\"]\n",
+        "includePaths = [\"/tmp/shared\"]\n",
+        "includePaths = [\"C:\\\\shared\"]\n",
+    ] {
+        let fixture = RepoFixture::new();
+        fixture.write_project(contents);
+
+        let error = resolve(fixture.request(ConfigOverrides::default())).unwrap_err();
+
+        assert_eq!(error.code, "nonportable_project_path", "{contents}");
+    }
+
+    let fixture = RepoFixture::new();
+    fixture.write_project("outDir = \"build/diagrams\"\nincludePaths = [\"docs/includes\"]\n");
+    let resolved = resolve(fixture.request(ConfigOverrides::default())).unwrap();
+    assert_eq!(resolved.out_dir, PathBuf::from("build/diagrams"));
+    assert_eq!(resolved.include_paths, vec![PathBuf::from("docs/includes")]);
+}
+
+#[test]
+fn graphviz_path_is_user_only_and_cli_has_highest_precedence() {
+    let fixture = RepoFixture::new();
+    fixture.write_user("graphvizPath = \"user-dot\"\n");
+    let overrides = ConfigOverrides {
+        graphviz_path: Some(PathBuf::from("cli-dot")),
+        ..ConfigOverrides::default()
+    };
+
+    let resolved = resolve(fixture.request(overrides)).unwrap();
+
+    assert_eq!(resolved.graphviz_path, PathBuf::from("cli-dot"));
+}
+
+#[test]
+fn user_config_can_select_remote_policy_and_trusted_url_roots() {
+    let fixture = RepoFixture::new();
+    fixture.write_user(
+        r#"
+remoteIncludes = "allowlist"
+allowedRemoteUrls = [
+  "HTTP://PLANTUML.INTERNAL:8080/",
+  "https://example.com"
+]
+"#,
+    );
+
+    let resolved = resolve(fixture.request(ConfigOverrides::default())).unwrap();
+
+    assert_eq!(resolved.remote_includes, RemoteIncludes::Allowlist);
+    assert_eq!(
+        resolved.allowed_remote_urls,
+        ["http://plantuml.internal:8080/", "https://example.com/",]
+    );
+}
+
+#[test]
+fn trusted_remote_url_roots_are_validated_as_whole_origins() {
+    for invalid in [
+        "relative/common/",
+        "file:///tmp/common/",
+        "https://user@example.com/common/",
+        "https://example.com/common",
+        "https://example.com/common/",
+        "https://example.com/common/?token=secret",
+        "https://example.com/common/#fragment",
+        "https://example.com/common/;https://evil.test/",
+    ] {
+        let fixture = RepoFixture::new();
+        fixture.write_user(&format!("allowedRemoteUrls = [{invalid:?}]\n"));
+
+        let error = resolve(fixture.request(ConfigOverrides::default())).unwrap_err();
+
+        assert_eq!(error.code, "invalid_remote_url", "{invalid}");
+    }
+
+    let fixture = RepoFixture::new();
+    fixture
+        .write_user("allowedRemoteUrls = [\"https://user:secret@example.com/?token=private\"]\n");
+    let error = resolve(fixture.request(ConfigOverrides::default())).unwrap_err();
+    assert!(!error.message.contains("secret"));
+    assert!(!error.message.contains("private"));
+}
+
+#[test]
+fn unreleased_boolean_remote_includes_and_security_keys_are_not_migrated() {
+    for stale in ["remoteIncludes = true", "security = \"allowlist\""] {
+        let fixture = RepoFixture::new();
+        fixture.write_user(stale);
+
+        let error = resolve(fixture.request(ConfigOverrides::default())).unwrap_err();
+
+        assert_eq!(error.code, "config_schema", "{stale}");
+    }
+}
+
+#[test]
+fn unknown_configuration_keys_are_rejected_by_the_current_schema() {
+    for unknown in [
         "renderer = \"auto\"",
         "autoDownloadJar = true",
         "defaultFormat = \"png\"",
     ] {
         let fixture = RepoFixture::new();
-        fixture.write_project(legacy);
+        fixture.write_project(unknown);
 
         let error = resolve(fixture.request(ConfigOverrides::default())).unwrap_err();
 
         assert_eq!(error.exit_code(), 2);
-        assert!(error
-            .to_string()
-            .contains("legacy unreleased configuration"));
-        assert!(error.to_string().contains("plantuml-export.toml"));
+        assert_eq!(error.code, "config_schema");
     }
 }
 

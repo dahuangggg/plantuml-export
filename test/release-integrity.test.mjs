@@ -5,10 +5,19 @@ import { test } from "node:test";
 
 const root = new URL("../", import.meta.url);
 const requiredReleaseInputs = [
+  "CHANGELOG.md",
+  "README.zh-CN.md",
+  "SECURITY.md",
   "docs/architecture.md",
   "docs/release-checklist.md",
+  "docs/security.md",
   "docs/spec-v0.1.0.md",
+  "release/notes-v0.1.0-rc.1.md",
+  "scripts/smoke-native-helper.sh",
+  "test/fixtures/graphviz-class.puml",
+  "test/fixtures/output-name-escape.puml",
   "test/fixtures/plantuml-node-types.json",
+  "test/fixtures/syntax-error.puml",
 ];
 
 test("clean checkouts contain every release and query-validation input", () => {
