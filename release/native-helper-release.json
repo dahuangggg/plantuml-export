@@ -1,7 +1,44 @@
 {
   "schemaVersion": 1,
   "repository": "dahuangggg/plantuml-export",
-  "status": "unpublished",
-  "releaseTag": null,
-  "artifacts": []
+  "status": "published",
+  "releaseTag": "v0.1.0-rc.1",
+  "artifacts": [
+    {
+      "target": "aarch64-apple-darwin",
+      "asset": "plantuml-export-aarch64-apple-darwin",
+      "url": "https://github.com/dahuangggg/plantuml-export/releases/download/v0.1.0-rc.1/plantuml-export-aarch64-apple-darwin",
+      "sha256": "c1de3c0559f09b556c3e590ad79cdb8babfb14e15baa88f959a04180b22986d7"
+    },
+    {
+      "target": "x86_64-apple-darwin",
+      "asset": "plantuml-export-x86_64-apple-darwin",
+      "url": "https://github.com/dahuangggg/plantuml-export/releases/download/v0.1.0-rc.1/plantuml-export-x86_64-apple-darwin",
+      "sha256": "f27ce45c6f770a0b552c563561eb547f5c093194d446a0dab20999a4d1e297b1"
+    },
+    {
+      "target": "aarch64-unknown-linux-gnu",
+      "asset": "plantuml-export-aarch64-unknown-linux-gnu",
+      "url": "https://github.com/dahuangggg/plantuml-export/releases/download/v0.1.0-rc.1/plantuml-export-aarch64-unknown-linux-gnu",
+      "sha256": "f7286550b7f03e73d0d9fa4e8c04a60c50181128b7d27703c4719d1c8f9c383f"
+    },
+    {
+      "target": "x86_64-unknown-linux-gnu",
+      "asset": "plantuml-export-x86_64-unknown-linux-gnu",
+      "url": "https://github.com/dahuangggg/plantuml-export/releases/download/v0.1.0-rc.1/plantuml-export-x86_64-unknown-linux-gnu",
+      "sha256": "418ab09fa29f34a5c62d7ec6bf23a9ae3c28bd239f4763262068c2eb4a61cc74"
+    },
+    {
+      "target": "aarch64-pc-windows-msvc",
+      "asset": "plantuml-export-aarch64-pc-windows-msvc.exe",
+      "url": "https://github.com/dahuangggg/plantuml-export/releases/download/v0.1.0-rc.1/plantuml-export-aarch64-pc-windows-msvc.exe",
+      "sha256": "dc40ad7b3115ce8ec2670c3e8667f0475e6b689f0286c3dd3b4f0f09ae90dbaa"
+    },
+    {
+      "target": "x86_64-pc-windows-msvc",
+      "asset": "plantuml-export-x86_64-pc-windows-msvc.exe",
+      "url": "https://github.com/dahuangggg/plantuml-export/releases/download/v0.1.0-rc.1/plantuml-export-x86_64-pc-windows-msvc.exe",
+      "sha256": "4485faef98a9ed5dddf7677fa9b9f1c99c96df6d2a3f43251683f18659de919f"
+    }
+  ]
 }

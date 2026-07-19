@@ -6,10 +6,10 @@ PlantUML Export is a GitHub-first native PlantUML export toolchain plus a thin
 Zed language extension. It provides deterministic local SVG, PNG, and PDF
 exports and plugin-managed Zed Code Actions without a Node runtime.
 
-The current branch is the `v0.1.0-rc.1` source candidate. This statement does
-not mean that the tag or its assets already exist. Native helper metadata is
-currently `unpublished` until the six GitHub binaries and real checksums have
-been produced and verified.
+The `v0.1.0-rc.1` GitHub prerelease and its six native helpers are published.
+The immutable tag intentionally retains `unpublished` helper metadata; the
+current default branch contains the separately reviewed follow-up metadata that
+pins those verified assets and enables automatic helper installation.
 
 Distribution is GitHub-only in v0.1. The extension is not listed in the Zed
 Gallery: installing it means cloning this repository and choosing **Install Dev
@@ -41,22 +41,20 @@ Alice -> Bob
 
 Prerequisites are Git, Zed, and `rustup`. Zed compiles a dev extension from its
 source checkout, so install the pinned Rust `1.96.0` toolchain and
-`wasm32-wasip2` target first. Because the metadata in this checkout is still
-`unpublished`, also build the native helper and put it on a `PATH` visible to
-Zed:
+`wasm32-wasip2` target first. The current default branch contains published
+helper metadata, so no native CLI installation or `PATH` setup is required:
 
 ```bash
 git clone https://github.com/dahuangggg/plantuml-export.git
 cd plantuml-export
 rustup toolchain install 1.96.0 --profile minimal --component rustfmt --component clippy
 rustup target add --toolchain 1.96.0 wasm32-wasip2
-cargo install --locked --path crates/plantuml-export
-plantuml-export version --json
 ```
 
-`cargo install` places the helper in Cargo's bin directory on macOS, Linux, and
-Windows. Confirm that directory is on `PATH`, then restart Zed so the GUI process
-sees the helper.
+Clone the current default branch as shown above. Checking out the immutable
+`v0.1.0-rc.1` tag instead gives the exact released source candidate, whose
+metadata deliberately remains `unpublished`; the default-branch follow-up is
+what enables automatic helper download for a GitHub-installed dev extension.
 
 In Zed:
 
@@ -64,16 +62,12 @@ In Zed:
 2. Select the cloned directory containing `extension.toml`.
 3. Open a saved PlantUML file and use the lightning button or `Cmd-.` / `Ctrl-.`.
 
-Helper metadata has two deliberately different behaviors:
-
-- `unpublished` (this checkout now): the extension looks for the locally built
-  `plantuml-export` on `PATH` and fails with an actionable message if it is
-  absent;
-- `published` (only after a release follow-up commit contains all six URLs and
-  checksums): the extension ignores `PATH`, downloads the matching helper into
-  Zed's private extension directory, and verifies it before launch. A standalone
-  CLI is then optional, but users must still clone the repository and use
-  **Install Dev Extension** because this project is not in the Zed Gallery.
+The checked-in metadata pins all six RC1 helper URLs and SHA-256 values. On LSP
+startup the extension ignores `PATH`, downloads the matching helper into Zed's
+private extension directory, verifies it before launch, and reuses the verified
+copy afterward. A standalone CLI is optional. Users must still clone the
+repository and use **Install Dev Extension** because this project is not in the
+Zed Gallery.
 
 On the first managed export, check, or LSP startup, the helper downloads the
 pinned PlantUML JAR and matching Temurin JRE. Expect approximately 66–78 MiB,
@@ -81,11 +75,10 @@ depending on platform. Later uses reuse the installed user cache under the
 reuse checks documented in [docs/security.md](docs/security.md); `offline = true`
 requires those assets to have been cached already.
 
-## Install the optional CLI after RC1 is published
+## Install the optional CLI from RC1
 
-Do not treat the following as proof that a release exists. Use it only after the
-[GitHub Releases](https://github.com/dahuangggg/plantuml-export/releases) page
-actually contains `v0.1.0-rc.1`, the selected binary, and `SHA256SUMS`.
+The [GitHub Releases](https://github.com/dahuangggg/plantuml-export/releases)
+page contains `v0.1.0-rc.1`, the six native binaries, and `SHA256SUMS`.
 
 | Platform | Expected asset |
 | --- | --- |
@@ -122,8 +115,8 @@ plantuml-export version --json
 On macOS, replace the checksum command with
 `grep "  $ASSET$" SHA256SUMS | shasum -a 256 --check`. On Windows, compare
 `Get-FileHash -Algorithm SHA256 <asset>` with the matching `SHA256SUMS` line,
-then place the `.exe` in a directory on `PATH`. The standalone CLI is optional
-for Zed once a checkout with `published` metadata is available.
+then place the `.exe` in a directory on `PATH`. The standalone CLI remains
+optional and is not consulted by the current published-metadata Zed extension.
 
 ## CLI
 
@@ -393,7 +386,7 @@ fails before rendering or mutating outputs.
 
 ## Troubleshooting
 
-Start with:
+For standalone CLI troubleshooting, start with:
 
 ```bash
 plantuml-export health --json
@@ -416,8 +409,6 @@ plantuml-export check path/to/diagram.puml --json
   Project and Zed settings cannot add them.
 - export action missing: open a PlantUML file and restart its language server.
 - document not saved: save the current file, then run the Code Action again.
-- native helpers are not published yet: this applies only to a development
-  checkout; build the local helper until the GitHub assets and checksums exist.
 - ownership conflict: move the unmanaged target or choose another `outDir`;
   the tool will not overwrite it.
 

@@ -6,9 +6,9 @@ PlantUML Export 是一个以 GitHub 为首要发布渠道的原生 PlantUML 导�
 并附带一个轻量的 Zed 语言扩展。它无需 Node 运行时，即可提供确定性的本地
 SVG、PNG 和 PDF 导出，以及由插件管理的 Zed Code Action。
 
-当前分支是 `v0.1.0-rc.1` 源码候选版本；这句话并不表示 tag 或资产已经存在。
-在六个平台的 GitHub 二进制文件及其真实校验和生成并验证之前，原生 helper
-元数据会保持为 `unpublished`。
+`v0.1.0-rc.1` GitHub 预发布及其六个平台原生 helper 已经发布。不可变 tag 中的
+helper metadata 刻意保持为 `unpublished`；当前默认分支包含经过单独审核的后续
+metadata，用来固定这些已验证资产并启用 helper 自动安装。
 
 v0.1 只通过 GitHub 分发，尚未上架 Zed Gallery。“安装扩展”是指 clone 此仓库，
 然后在 Zed 中选择 **Install Dev Extension**；GitHub-only 不等于 Gallery 一键
@@ -38,21 +38,20 @@ Alice -> Bob
 ## 把当前源码安装为 Zed 开发扩展
 
 前置要求是 Git、Zed 和 `rustup`。Zed 会从源码编译开发扩展，因此要先安装
-项目固定的 Rust `1.96.0` 工具链和 `wasm32-wasip2` target。由于当前 checkout
-中的 metadata 仍为 `unpublished`，还要构建原生 helper，并将它放到 Zed 可见
-的 `PATH` 中：
+项目固定的 Rust `1.96.0` 工具链和 `wasm32-wasip2` target。当前默认分支已经
+包含 published helper metadata，因此不需要安装原生 CLI，也不需要配置 CLI
+`PATH`：
 
 ```bash
 git clone https://github.com/dahuangggg/plantuml-export.git
 cd plantuml-export
 rustup toolchain install 1.96.0 --profile minimal --component rustfmt --component clippy
 rustup target add --toolchain 1.96.0 wasm32-wasip2
-cargo install --locked --path crates/plantuml-export
-plantuml-export version --json
 ```
 
-`cargo install` 在 macOS、Linux 和 Windows 上都会把 helper 放进 Cargo 的 bin
-目录。确认该目录位于 `PATH` 后重启 Zed，让 GUI 进程看到 helper。
+请按上面的命令 clone 当前默认分支。如果改为 checkout 不可变的
+`v0.1.0-rc.1` tag，得到的是完全一致的发布候选源码，其中 metadata 按设计仍为
+`unpublished`；正是默认分支的后续提交为 GitHub 安装的开发扩展启用了自动下载。
 
 在 Zed 中：
 
@@ -60,25 +59,20 @@ plantuml-export version --json
 2. 选择包含 `extension.toml` 的 clone 目录。
 3. 打开一个已保存的 PlantUML 文件，通过闪电按钮或 `Cmd-.` / `Ctrl-.` 导出。
 
-Helper metadata 有两种刻意区分的行为：
-
-- `unpublished`（当前 checkout）：扩展会在 `PATH` 中寻找本地构建的
-  `plantuml-export`；找不到时会给出可操作的错误；
-- `published`（仅当 Release 后续提交已写入六个平台的 URL 和 checksum）：
-  扩展会忽略 `PATH`，将匹配平台的 helper 下载到 Zed 私有扩展目录，并在启动
-  前验证。此时独立 CLI 是可选的，但由于项目没有上架 Zed Gallery，用户仍要
-  clone 仓库并使用 **Install Dev Extension**。
+已提交的 metadata 固定了 RC1 六个平台 helper 的 URL 和 SHA-256。启动 LSP 时，
+扩展会忽略 `PATH`，把匹配平台的 helper 下载到 Zed 私有扩展目录，验证后启动，
+之后复用已验证副本。独立 CLI 只是可选工具。由于项目没有上架 Zed Gallery，
+用户仍需 clone 仓库并使用 **Install Dev Extension**。
 
 首次 managed 导出、检查或启动 LSP 时，helper 会下载固定版本的 PlantUML JAR
 和匹配的 Temurin JRE；按平台预计约 66–78 MiB。之后会按照
 [docs/security.md](docs/security.md) 记录的复用检查使用已安装的用户缓存；使用
 `offline = true` 前必须先完成缓存。
 
-## RC1 发布后安装可选 CLI
+## 从 RC1 安装可选 CLI
 
-以下说明不代表 Release 已存在。只有当
 [GitHub Releases](https://github.com/dahuangggg/plantuml-export/releases) 页面
-确实出现 `v0.1.0-rc.1`、所选二进制和 `SHA256SUMS` 后才能执行。
+已经包含 `v0.1.0-rc.1`、六个平台原生二进制和 `SHA256SUMS`。
 
 | 平台 | 预期资产 |
 | --- | --- |
@@ -113,8 +107,8 @@ plantuml-export version --json
 macOS 请把 checksum 命令换成
 `grep "  $ASSET$" SHA256SUMS | shasum -a 256 --check`。Windows 请用
 `Get-FileHash -Algorithm SHA256 <asset>` 与 `SHA256SUMS` 中对应行比较，再把
-`.exe` 放入 `PATH`。当存在包含 `published` metadata 的 checkout 后，Zed
-不再要求独立 CLI。
+`.exe` 放入 `PATH`。独立 CLI 始终是可选的，当前使用 published metadata 的
+Zed 扩展不会查找它。
 
 ## CLI
 
@@ -359,7 +353,7 @@ SVG/PNG/PDF 类型的非空普通文件。替换任何内容之前，会话会�
 
 ## 故障排查
 
-请先运行：
+排查独立 CLI 时，请先运行：
 
 ```bash
 plantuml-export health --json
@@ -379,8 +373,6 @@ plantuml-export check path/to/diagram.puml --json
   所有路径。项目和 Zed 设置不能新增 origin。
 - 找不到导出动作：打开 PlantUML 文件并重启对应的 language server。
 - 文档未保存：先保存当前文件，再重新运行 Code Action。
-- 原生 helper 尚未发布：这只影响源码开发版本；在 GitHub 资产和校验和生成
-  之前，请先构建本地 helper。
 - 所有权冲突：移动不受管理的目标，或选择其他 `outDir`；工具不会覆盖它。
 
 ## 开发与发布门槛

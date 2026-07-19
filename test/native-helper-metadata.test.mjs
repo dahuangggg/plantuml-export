@@ -13,19 +13,36 @@ import {
 } from "../scripts/native-helper-metadata.mjs";
 
 const root = new URL("../", import.meta.url);
+const RC1_SHA256_BY_TARGET = new Map([
+  ["aarch64-apple-darwin", "c1de3c0559f09b556c3e590ad79cdb8babfb14e15baa88f959a04180b22986d7"],
+  ["x86_64-apple-darwin", "f27ce45c6f770a0b552c563561eb547f5c093194d446a0dab20999a4d1e297b1"],
+  ["aarch64-unknown-linux-gnu", "f7286550b7f03e73d0d9fa4e8c04a60c50181128b7d27703c4719d1c8f9c383f"],
+  ["x86_64-unknown-linux-gnu", "418ab09fa29f34a5c62d7ec6bf23a9ae3c28bd239f4763262068c2eb4a61cc74"],
+  ["aarch64-pc-windows-msvc", "dc40ad7b3115ce8ec2670c3e8667f0475e6b689f0286c3dd3b4f0f09ae90dbaa"],
+  ["x86_64-pc-windows-msvc", "4485faef98a9ed5dddf7677fa9b9f1c99c96df6d2a3f43251683f18659de919f"],
+]);
+const EXPECTED_RC1_ARTIFACTS = EXPECTED_NATIVE_HELPER_ASSETS.map(
+  ({ target, asset }) => ({
+    target,
+    asset,
+    url: `https://github.com/dahuangggg/plantuml-export/releases/download/v0.1.0-rc.1/${asset}`,
+    sha256: RC1_SHA256_BY_TARGET.get(target),
+  }),
+);
 
-test("checked-in native helper metadata matches its declared release state", () => {
+test("checked-in native helper metadata publishes the exact RC1 helper set", () => {
   const metadata = JSON.parse(
     fs.readFileSync(new URL("release/native-helper-release.json", root), "utf8"),
   );
 
-  assertCheckedInMetadata(metadata);
+  assertPublishedRc1Shape(metadata);
+  assert.deepEqual(metadata.artifacts, EXPECTED_RC1_ARTIFACTS);
 });
 
 test("checked-in metadata contract accepts the generated published follow-up", () => {
   const metadata = buildNativeHelperMetadata("v0.1.0-rc.1", validChecksums());
 
-  assert.doesNotThrow(() => assertCheckedInMetadata(metadata));
+  assert.doesNotThrow(() => assertPublishedRc1Shape(metadata));
 });
 
 test("metadata builder requires all six native helper checksums", () => {
@@ -168,20 +185,12 @@ function validChecksums() {
   );
 }
 
-function assertCheckedInMetadata(metadata) {
+function assertPublishedRc1Shape(metadata) {
   assert.doesNotThrow(() => validateNativeHelperMetadata(metadata));
-  if (metadata.status === "unpublished") {
-    assert.deepEqual(metadata, {
-      schemaVersion: 1,
-      repository: "dahuangggg/plantuml-export",
-      status: "unpublished",
-      releaseTag: null,
-      artifacts: [],
-    });
-    return;
-  }
-
   assert.equal(metadata.status, "published");
-  assert.match(metadata.releaseTag, /^v0\.1\.0(?:-rc\.[1-9][0-9]*)?$/);
-  assert.equal(metadata.artifacts.length, EXPECTED_NATIVE_HELPER_ASSETS.length);
+  assert.equal(metadata.releaseTag, "v0.1.0-rc.1");
+  assert.deepEqual(
+    metadata.artifacts.map(({ target, asset }) => ({ target, asset })),
+    EXPECTED_NATIVE_HELPER_ASSETS,
+  );
 }

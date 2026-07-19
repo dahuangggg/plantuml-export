@@ -661,25 +661,22 @@ mod tests {
     }
 
     #[test]
-    fn checked_in_metadata_matches_its_declared_release_state() {
+    fn checked_in_metadata_publishes_exact_rc1_helpers_without_using_path() {
         let metadata = ReleaseMetadata::parse(NATIVE_HELPER_METADATA).unwrap();
 
-        match metadata.status {
-            ReleaseStatus::Unpublished => {
-                assert!(metadata
-                    .published_tag()
-                    .unwrap_err()
-                    .contains("not published yet"));
-                assert!(metadata.artifacts.is_empty());
-            }
-            ReleaseStatus::Published => {
-                assert_eq!(
-                    metadata.published_tag().unwrap(),
-                    metadata.release_tag.as_deref().unwrap()
-                );
-                assert_eq!(metadata.artifacts.len(), EXPECTED_ARTIFACTS.len());
-            }
+        assert_eq!(metadata.status, ReleaseStatus::Published);
+        assert_eq!(metadata.published_tag().unwrap(), "v0.1.0-rc.1");
+        assert_eq!(metadata.artifacts.len(), EXPECTED_ARTIFACTS.len());
+        for (target, expected_asset) in EXPECTED_ARTIFACTS {
+            assert_eq!(metadata.artifact_for(target).unwrap().asset, expected_asset);
         }
+        assert_eq!(
+            helper_resolution(&metadata, || {
+                panic!("checked-in published metadata must not inspect PATH")
+            })
+            .unwrap(),
+            HelperResolution::Managed
+        );
     }
 
     #[test]
