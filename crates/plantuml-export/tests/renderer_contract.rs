@@ -468,7 +468,7 @@ fn process_executor_removes_inherited_security_values_before_setting_explicit_on
         .execute(&platform_security_env_command(), Duration::from_secs(2))
         .unwrap();
 
-    assert_eq!(output.stdout, b"INTERNET");
+    assert_eq!(String::from_utf8(output.stdout).unwrap().trim(), "INTERNET");
 }
 
 #[test]
@@ -1086,9 +1086,7 @@ fn platform_security_env_command() -> CommandSpec {
         args: vec![
             OsString::from("/D"),
             OsString::from("/C"),
-            OsString::from(
-                "<NUL set /P _plantuml_export_probe=%PLANTUML_SECURITY_PROFILE% & exit /B 0",
-            ),
+            OsString::from("echo %PLANTUML_SECURITY_PROFILE%"),
         ],
         env: vec![(
             OsString::from("PLANTUML_SECURITY_PROFILE"),
