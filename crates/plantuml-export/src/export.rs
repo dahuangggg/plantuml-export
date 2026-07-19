@@ -2646,7 +2646,6 @@ mod tests {
             Duration::from_millis(1),
         )
         .expect("an unlocked crash leftover must be reusable");
-        assert_eq!(fs::read(&lock).expect("lock contents"), b"stale pid");
 
         let error = ExportLock::acquire_with_policy(
             &lock,
@@ -2658,8 +2657,16 @@ mod tests {
         assert!(error.message.contains("waiting for export lock"));
 
         drop(first);
-        ExportLock::acquire_with_policy(&lock, Duration::from_millis(25), Duration::from_millis(1))
-            .expect("dropping the owner must release the operating-system lock");
+        assert_eq!(fs::read(&lock).expect("lock contents"), b"stale pid");
+
+        let second = ExportLock::acquire_with_policy(
+            &lock,
+            Duration::from_millis(25),
+            Duration::from_millis(1),
+        )
+        .expect("dropping the owner must release the operating-system lock");
+        drop(second);
+        assert_eq!(fs::read(&lock).expect("lock contents"), b"stale pid");
     }
 
     #[cfg(unix)]

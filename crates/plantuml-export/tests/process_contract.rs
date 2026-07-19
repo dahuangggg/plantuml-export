@@ -1,5 +1,5 @@
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -343,8 +343,28 @@ fn lsp_helper_exports_through_code_actions_without_a_path_cli() {
         .env("PATH", "/usr/bin:/bin")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
         .unwrap();
+    let mut child_stdout = child.stdout.take().unwrap();
+    let (stdout_sender, stdout_receiver) = std::sync::mpsc::channel();
+    let stdout_reader = thread::spawn(move || {
+        let mut buffer = [0_u8; 4096];
+        loop {
+            match child_stdout.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(read) => {
+                    if stdout_sender.send(Ok(buffer[..read].to_vec())).is_err() {
+                        break;
+                    }
+                }
+                Err(error) => {
+                    let _ = stdout_sender.send(Err(error));
+                    break;
+                }
+            }
+        }
+    });
     let input = [
         serde_json::json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{}}}),
         serde_json::json!({"jsonrpc":"2.0","method":"initialized","params":{}}),
@@ -378,9 +398,31 @@ fn lsp_helper_exports_through_code_actions_without_a_path_cli() {
     stdin.flush().unwrap();
 
     let exported = root.join("out/model.svg");
-    let wait_started = Instant::now();
-    while !exported.is_file() && wait_started.elapsed() < Duration::from_secs(5) {
-        thread::sleep(Duration::from_millis(10));
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut stdout_bytes = Vec::new();
+    let mut stdout_read_error = None;
+    let mut export_completed = false;
+    while Instant::now() < deadline {
+        let wait = deadline
+            .saturating_duration_since(Instant::now())
+            .min(Duration::from_millis(50));
+        match stdout_receiver.recv_timeout(wait) {
+            Ok(Ok(chunk)) => stdout_bytes.extend_from_slice(&chunk),
+            Ok(Err(error)) => {
+                stdout_read_error = Some(error);
+                break;
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+        }
+        let stdout = String::from_utf8_lossy(&stdout_bytes);
+        if exported.is_file()
+            && stdout.contains("Exported PlantUML to out/model.svg")
+            && stdout.contains("\"id\":3")
+        {
+            export_completed = true;
+            break;
+        }
     }
     let shutdown = [
         serde_json::json!({"jsonrpc":"2.0","id":4,"method":"shutdown","params":null}),
@@ -391,9 +433,26 @@ fn lsp_helper_exports_through_code_actions_without_a_path_cli() {
     drop(stdin);
 
     let output = child.wait_with_output().unwrap();
+    stdout_reader.join().unwrap();
+    for chunk in stdout_receiver.try_iter() {
+        match chunk {
+            Ok(chunk) => stdout_bytes.extend_from_slice(&chunk),
+            Err(error) => stdout_read_error = Some(error),
+        }
+    }
 
     assert_eq!(output.status.code(), Some(0));
-    let stdout = String::from_utf8(output.stdout).unwrap();
+    let stdout = String::from_utf8(stdout_bytes).unwrap();
+    assert!(
+        stdout_read_error.is_none(),
+        "failed to read LSP stdout: {stdout_read_error:?}"
+    );
+    assert!(
+        export_completed,
+        "LSP export did not complete before shutdown\nstdout:\n{}\nstderr:\n{}",
+        stdout,
+        String::from_utf8_lossy(&output.stderr)
+    );
     assert!(stdout.contains("\"textDocumentSync\":1"));
     assert!(stdout.contains("\"codeActionProvider\":true"));
     assert!(stdout.contains("\"plantuml-export.export\""));
