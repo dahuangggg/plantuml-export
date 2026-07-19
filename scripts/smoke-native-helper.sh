@@ -27,8 +27,8 @@ fi
 mkdir -p "${smoke_root}"
 cp "${fixture}" "${smoke_root}/diagram.puml"
 
-"${helper}" --root "${smoke_root}" --json health
 "${helper}" --root "${smoke_root}" --json check diagram.puml
+"${helper}" --root "${smoke_root}" --json health
 
 for format in svg png pdf; do
   "${helper}" --root "${smoke_root}" --json export \

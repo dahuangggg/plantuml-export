@@ -6,6 +6,12 @@ const workflow = fs.readFileSync(
   new URL("../.github/workflows/release.yml", import.meta.url),
   "utf8",
 ).replaceAll("\r\n", "\n");
+const smoke = fs
+  .readFileSync(
+    new URL("../scripts/smoke-native-helper.sh", import.meta.url),
+    "utf8",
+  )
+  .replaceAll("\r\n", "\n");
 
 const targets = [
   ["macos-15", "aarch64-apple-darwin", "plantuml-export-aarch64-apple-darwin"],
@@ -136,6 +142,14 @@ test("every host-native release binary runs the managed export smoke", () => {
   assert.ok(
     workflow.indexOf("Smoke managed SVG, PNG, and PDF exports") <
       workflow.indexOf("Upload native binary"),
+  );
+  assert.ok(
+    smoke.indexOf('--json check') < smoke.indexOf('--json health'),
+    "the first managed check must install prerequisites before read-only health",
+  );
+  assert.ok(
+    smoke.indexOf('--json health') < smoke.indexOf('--json export'),
+    "the smoke must validate installed prerequisites before exporting",
   );
 });
 
