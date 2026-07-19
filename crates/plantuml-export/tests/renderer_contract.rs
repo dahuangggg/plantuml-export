@@ -1084,8 +1084,11 @@ fn platform_security_env_command() -> CommandSpec {
     CommandSpec {
         program: PathBuf::from("cmd.exe"),
         args: vec![
+            OsString::from("/D"),
             OsString::from("/C"),
-            OsString::from("echo|set /p=%PLANTUML_SECURITY_PROFILE%"),
+            OsString::from(
+                "<NUL set /P _plantuml_export_probe=%PLANTUML_SECURITY_PROFILE% & exit /B 0",
+            ),
         ],
         env: vec![(
             OsString::from("PLANTUML_SECURITY_PROFILE"),
