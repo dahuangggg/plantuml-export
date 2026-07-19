@@ -144,13 +144,26 @@ test("every host-native release binary runs the managed export smoke", () => {
       workflow.indexOf("Upload native binary"),
   );
   assert.ok(
-    smoke.indexOf('--json export') < smoke.indexOf('--json check'),
+    smoke.indexOf('--json export') < smoke.indexOf('--json health'),
     "the first managed export must absorb cold installation and JVM startup",
   );
-  assert.ok(
-    smoke.indexOf('--json check') < smoke.indexOf('--json health'),
-    "the warmed diagnostic path must pass before read-only health",
+  assert.doesNotMatch(
+    smoke,
+    /--json check/,
+    "the export release smoke must not inherit the interactive diagnostic timeout",
   );
+  for (const variable of [
+    "HOME",
+    "XDG_CACHE_HOME",
+    "XDG_STATE_HOME",
+    "LOCALAPPDATA",
+  ]) {
+    assert.match(
+      smoke,
+      new RegExp(`export ${variable}="\\$\\{smoke_support_root\\}`),
+      `${variable} must keep managed state on the smoke output volume`,
+    );
+  }
 });
 
 function escapeRegex(value) {
