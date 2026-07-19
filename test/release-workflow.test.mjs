@@ -144,12 +144,12 @@ test("every host-native release binary runs the managed export smoke", () => {
       workflow.indexOf("Upload native binary"),
   );
   assert.ok(
-    smoke.indexOf('--json check') < smoke.indexOf('--json health'),
-    "the first managed check must install prerequisites before read-only health",
+    smoke.indexOf('--json export') < smoke.indexOf('--json check'),
+    "the first managed export must absorb cold installation and JVM startup",
   );
   assert.ok(
-    smoke.indexOf('--json health') < smoke.indexOf('--json export'),
-    "the smoke must validate installed prerequisites before exporting",
+    smoke.indexOf('--json check') < smoke.indexOf('--json health'),
+    "the warmed diagnostic path must pass before read-only health",
   );
 });
 

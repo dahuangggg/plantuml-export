@@ -528,6 +528,71 @@ fn managed_install_uses_fixed_url_temp_checksum_lock_and_atomic_rename() {
 }
 
 #[test]
+fn managed_install_retries_transient_downloads_and_resets_partial_files() {
+    let temp = tempfile::tempdir().unwrap();
+    let downloader = FlakyDownloader::new(2);
+
+    let installed = ensure_managed_jar_with(
+        temp.path(),
+        false,
+        &downloader,
+        &MarkerVerifier,
+        InstallPolicy::for_tests(),
+    )
+    .unwrap();
+
+    assert_eq!(downloader.attempts(), 3);
+    assert_eq!(fs::read(installed).unwrap(), b"verified jar");
+    assert_eq!(
+        fs::read_dir(temp.path()).unwrap().count(),
+        2,
+        "partial downloads must not survive a successful retry"
+    );
+}
+
+#[test]
+fn managed_install_does_not_retry_permanent_download_errors() {
+    let temp = tempfile::tempdir().unwrap();
+    let downloader = PermanentFailureDownloader::default();
+
+    let result = ensure_managed_jar_with(
+        temp.path(),
+        false,
+        &downloader,
+        &MarkerVerifier,
+        InstallPolicy::for_tests(),
+    );
+
+    assert!(matches!(result, Err(RendererError::Download { .. })));
+    assert_eq!(downloader.attempts(), 1);
+    assert!(!managed_jar_path(temp.path()).exists());
+}
+
+#[test]
+fn managed_install_removes_partial_download_after_retry_exhaustion() {
+    let temp = tempfile::tempdir().unwrap();
+    let downloader = FlakyDownloader::new(usize::MAX);
+
+    let result = ensure_managed_jar_with(
+        temp.path(),
+        false,
+        &downloader,
+        &MarkerVerifier,
+        InstallPolicy::for_tests(),
+    );
+
+    assert!(matches!(
+        result,
+        Err(RendererError::Download { message, .. })
+            if message.contains("failed after 3 attempts")
+    ));
+    assert_eq!(downloader.attempts(), 3);
+    assert!(!managed_jar_path(temp.path()).exists());
+    assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 1);
+    assert!(temp.path().join("plantuml-1.2026.6.jar.lock").is_file());
+}
+
+#[test]
 fn managed_install_honors_offline_checksum_and_lock_failures() {
     let offline = tempfile::tempdir().unwrap();
     let downloader = RecordingDownloader::new(b"verified jar");
@@ -889,7 +954,65 @@ impl Downloader for RecordingDownloader {
             .lock()
             .unwrap()
             .push((url.to_string(), destination.to_path_buf()));
-        fs::write(destination, &self.body).map_err(|error| DownloadError(error.to_string()))
+        fs::write(destination, &self.body)
+            .map_err(|error| DownloadError::permanent(error.to_string()))
+    }
+}
+
+struct FlakyDownloader {
+    transient_failures: usize,
+    attempts: Mutex<usize>,
+}
+
+impl FlakyDownloader {
+    fn new(transient_failures: usize) -> Self {
+        Self {
+            transient_failures,
+            attempts: Mutex::new(0),
+        }
+    }
+
+    fn attempts(&self) -> usize {
+        *self.attempts.lock().unwrap()
+    }
+}
+
+impl Downloader for FlakyDownloader {
+    fn download_to(&self, _url: &str, destination: &Path) -> Result<(), DownloadError> {
+        let attempt = {
+            let mut attempts = self.attempts.lock().unwrap();
+            *attempts += 1;
+            *attempts
+        };
+        let mut file = OpenOptions::new()
+            .append(true)
+            .open(destination)
+            .map_err(|error| DownloadError::permanent(error.to_string()))?;
+        if attempt <= self.transient_failures {
+            file.write_all(b"partial")
+                .map_err(|error| DownloadError::permanent(error.to_string()))?;
+            return Err(DownloadError::retryable("transient network failure"));
+        }
+        file.write_all(b"verified jar")
+            .map_err(|error| DownloadError::permanent(error.to_string()))
+    }
+}
+
+#[derive(Default)]
+struct PermanentFailureDownloader {
+    attempts: Mutex<usize>,
+}
+
+impl PermanentFailureDownloader {
+    fn attempts(&self) -> usize {
+        *self.attempts.lock().unwrap()
+    }
+}
+
+impl Downloader for PermanentFailureDownloader {
+    fn download_to(&self, _url: &str, _destination: &Path) -> Result<(), DownloadError> {
+        *self.attempts.lock().unwrap() += 1;
+        Err(DownloadError::permanent("permanent download failure"))
     }
 }
 
@@ -901,7 +1024,7 @@ impl Downloader for OversizeDownloader {
             .write(true)
             .open(destination)
             .and_then(|file| file.set_len(MAX_MANAGED_JAR_BYTES + 1))
-            .map_err(|error| DownloadError(error.to_string()))
+            .map_err(|error| DownloadError::permanent(error.to_string()))
     }
 }
 

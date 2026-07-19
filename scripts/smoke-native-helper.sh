@@ -27,10 +27,18 @@ fi
 mkdir -p "${smoke_root}"
 cp "${fixture}" "${smoke_root}/diagram.puml"
 
+# Give the first managed install and PlantUML JVM startup the export path's
+# 120-second render budget before exercising the 10-second diagnostic path.
+"${helper}" --root "${smoke_root}" --json export \
+  --format svg \
+  --out-dir out \
+  diagram.puml
+test -s "${smoke_root}/out/diagram.svg"
+
 "${helper}" --root "${smoke_root}" --json check diagram.puml
 "${helper}" --root "${smoke_root}" --json health
 
-for format in svg png pdf; do
+for format in png pdf; do
   "${helper}" --root "${smoke_root}" --json export \
     --format "${format}" \
     --out-dir out \

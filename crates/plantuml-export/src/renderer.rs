@@ -705,9 +705,7 @@ pub struct UreqDownloader;
 
 impl Downloader for UreqDownloader {
     fn download_to(&self, url: &str, destination: &Path) -> Result<(), DownloadError> {
-        let mut response = ureq::get(url)
-            .call()
-            .map_err(|error| DownloadError(format!("HTTP request failed: {error}")))?;
+        let mut response = ureq::get(url).call().map_err(classify_request_error)?;
         if let Some(content_length) = response
             .headers()
             .get("content-length")
@@ -715,7 +713,7 @@ impl Downloader for UreqDownloader {
             .and_then(|value| value.parse::<u64>().ok())
         {
             if content_length > MAX_MANAGED_JAR_BYTES {
-                return Err(DownloadError(format!(
+                return Err(DownloadError::permanent(format!(
                     "response content length {content_length} exceeds the {MAX_MANAGED_JAR_BYTES} byte limit"
                 )));
             }
@@ -725,7 +723,7 @@ impl Downloader for UreqDownloader {
             .truncate(true)
             .open(destination)
             .map_err(|error| {
-                DownloadError(format!(
+                DownloadError::permanent(format!(
                     "could not open {} for download: {error}",
                     destination.display()
                 ))
@@ -734,18 +732,33 @@ impl Downloader for UreqDownloader {
             .body_mut()
             .as_reader()
             .take(MAX_MANAGED_JAR_BYTES + 1);
-        let downloaded =
-            std::io::copy(&mut limited_reader, &mut destination_file).map_err(|error| {
-                DownloadError(format!("failed while streaming response body: {error}"))
+        let mut downloaded = 0_u64;
+        let mut buffer = [0_u8; 64 * 1024];
+        loop {
+            let read = limited_reader.read(&mut buffer).map_err(|error| {
+                DownloadError::retryable(format!("failed while streaming response body: {error}"))
             })?;
+            if read == 0 {
+                break;
+            }
+            destination_file
+                .write_all(&buffer[..read])
+                .map_err(|error| {
+                    DownloadError::permanent(format!(
+                        "failed to write downloaded file {}: {error}",
+                        destination.display()
+                    ))
+                })?;
+            downloaded += read as u64;
+        }
         if downloaded > MAX_MANAGED_JAR_BYTES {
             let _ = destination_file.set_len(0);
-            return Err(DownloadError(format!(
+            return Err(DownloadError::permanent(format!(
                 "response exceeds the {MAX_MANAGED_JAR_BYTES} byte limit"
             )));
         }
         destination_file.sync_all().map_err(|error| {
-            DownloadError(format!(
+            DownloadError::permanent(format!(
                 "failed to flush downloaded file {}: {error}",
                 destination.display()
             ))
@@ -755,15 +768,62 @@ impl Downloader for UreqDownloader {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DownloadError(pub String);
+pub struct DownloadError {
+    message: String,
+    retryable: bool,
+}
+
+impl DownloadError {
+    pub fn retryable(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            retryable: true,
+        }
+    }
+
+    pub fn permanent(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            retryable: false,
+        }
+    }
+
+    fn is_retryable(&self) -> bool {
+        self.retryable
+    }
+}
 
 impl fmt::Display for DownloadError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.0)
+        formatter.write_str(&self.message)
     }
 }
 
 impl std::error::Error for DownloadError {}
+
+fn classify_request_error(error: ureq::Error) -> DownloadError {
+    let retryable = match &error {
+        ureq::Error::StatusCode(status) => {
+            matches!(*status, 408 | 425 | 429) || (500..=599).contains(status)
+        }
+        ureq::Error::Protocol(_)
+        | ureq::Error::Io(_)
+        | ureq::Error::Timeout(_)
+        | ureq::Error::HostNotFound
+        | ureq::Error::ConnectionFailed
+        | ureq::Error::Tls(_)
+        | ureq::Error::ConnectProxyFailed(_)
+        | ureq::Error::Other(_)
+        | ureq::Error::BodyStalled => true,
+        _ => false,
+    };
+    let message = format!("HTTP request failed: {error}");
+    if retryable {
+        DownloadError::retryable(message)
+    } else {
+        DownloadError::permanent(message)
+    }
+}
 
 pub trait ChecksumVerifier: Send + Sync {
     fn sha256(&self, path: &Path) -> Result<String, RendererError>;
@@ -811,6 +871,8 @@ fn hex_lower(bytes: &[u8]) -> String {
 pub struct InstallPolicy {
     pub lock_timeout: Duration,
     pub poll_interval: Duration,
+    pub download_attempts: usize,
+    pub download_retry_delay: Duration,
 }
 
 impl InstallPolicy {
@@ -818,6 +880,8 @@ impl InstallPolicy {
         Self {
             lock_timeout: Duration::from_millis(25),
             poll_interval: Duration::from_millis(2),
+            download_attempts: 3,
+            download_retry_delay: Duration::ZERO,
         }
     }
 }
@@ -827,8 +891,44 @@ impl Default for InstallPolicy {
         Self {
             lock_timeout: Duration::from_secs(30),
             poll_interval: Duration::from_millis(50),
+            download_attempts: 3,
+            download_retry_delay: Duration::from_millis(250),
         }
     }
+}
+
+fn download_with_retry(
+    downloader: &dyn Downloader,
+    url: &str,
+    destination: &Path,
+    policy: InstallPolicy,
+) -> Result<(), DownloadError> {
+    let attempts = policy.download_attempts.max(1);
+    for attempt in 1..=attempts {
+        match downloader.download_to(url, destination) {
+            Ok(()) => return Ok(()),
+            Err(error) if error.is_retryable() && attempt < attempts => {
+                OpenOptions::new()
+                    .write(true)
+                    .truncate(true)
+                    .open(destination)
+                    .map_err(|reset_error| {
+                        DownloadError::permanent(format!(
+                            "failed to reset partial download {}: {reset_error}",
+                            destination.display()
+                        ))
+                    })?;
+                thread::sleep(policy.download_retry_delay.saturating_mul(attempt as u32));
+            }
+            Err(error) if error.is_retryable() => {
+                return Err(DownloadError::permanent(format!(
+                    "failed after {attempts} attempts: {error}"
+                )));
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    unreachable!("download attempt loop always returns")
 }
 
 pub fn ensure_managed_jar(cache_dir: &Path, offline: bool) -> Result<PathBuf, RendererError> {
@@ -874,12 +974,12 @@ pub fn ensure_managed_jar_with(
 
     let temporary = reserve_temporary_path(cache_dir)?;
     let mut temporary_guard = RemoveOnDrop::new(temporary.clone());
-    downloader
-        .download_to(MANAGED_PLANTUML_URL, &temporary)
-        .map_err(|error| RendererError::Download {
+    download_with_retry(downloader, MANAGED_PLANTUML_URL, &temporary, policy).map_err(|error| {
+        RendererError::Download {
             url: MANAGED_PLANTUML_URL.to_string(),
             message: error.to_string(),
-        })?;
+        }
+    })?;
     let downloaded_size = fs::metadata(&temporary)
         .map_err(|error| RendererError::Io {
             path: temporary.clone(),
@@ -961,12 +1061,12 @@ pub fn ensure_managed_java_with(
 
     let archive = reserve_temporary_named_path(cache_dir, "temurin-jre.archive")?;
     let _archive_guard = RemoveOnDrop::new(archive.clone());
-    downloader
-        .download_to(asset.url, &archive)
-        .map_err(|error| RendererError::Download {
+    download_with_retry(downloader, asset.url, &archive, policy).map_err(|error| {
+        RendererError::Download {
             url: asset.url.to_string(),
             message: error.to_string(),
-        })?;
+        }
+    })?;
     let downloaded_size = fs::metadata(&archive)
         .map_err(|error| RendererError::Io {
             path: archive.clone(),
