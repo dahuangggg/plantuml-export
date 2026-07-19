@@ -143,7 +143,8 @@ fn unknown_zed_initialization_options_fail_closed() {
 
 #[test]
 fn saved_plantuml_documents_offer_svg_png_and_pdf_exports_through_the_lsp_helper() {
-    let uri = Url::parse("file:///workspace/model.puml").unwrap();
+    let workspace = tempfile::tempdir().unwrap();
+    let uri = Url::from_file_path(workspace.path().join("model.puml")).unwrap();
 
     let commands = export_commands_for_document(&uri);
 
