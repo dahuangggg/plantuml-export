@@ -5,7 +5,7 @@ import test from "node:test";
 const workflow = fs.readFileSync(
   new URL("../.github/workflows/release.yml", import.meta.url),
   "utf8",
-);
+).replaceAll("\r\n", "\n");
 
 const targets = [
   ["macos-15", "aarch64-apple-darwin", "plantuml-export-aarch64-apple-darwin"],
